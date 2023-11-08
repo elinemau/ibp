@@ -1,13 +1,11 @@
 import pandas as pd
 import re
-
-#function to remove empty strings from list
-def remove_emptys(string):
-    return string !=""
+import numpy as np
+from sklearn.decomposition import PCA
 
 #making dataframe to make x y z coordinates accessible
 df = pd.DataFrame(columns=["number", "atom", "x", "y", "z"])
-with open("1a28\\volsite\\ligand.mol2", "r") as file:
+with open("1a28\\volsite\\CAVITY_N1_ALL.mol2", "r") as file:
     line = file.readline()
     while not line.startswith("@<TRIPOS>ATOM"):
         line = file.readline()
@@ -22,12 +20,15 @@ df['x'] = df['x'].astype(float)
 df['y'] = df['y'].astype(float)
 df['z'] = df['z'].astype(float)
 
-#calculate the center of gravity (COG)
-#for ligand (22.844, 10.457, 60.069)
-#for cavity1 (23.0199, 10.064, 59.941)  distance from prot mean = 10.45
-#for cavity2 (21.763, 8.521, 70.01) distance from prot mean = 8.24
+point_cloud = df[["x", "y", "z"]].to_numpy()
 
-COG = df[["x","y","z"]].mean()
-print(COG)
+# Create a PCA instance and specify the number of components you want to retain
+pca = PCA(n_components=3)
 
+# Fit the PCA model to your data
+pca.fit(point_cloud)
 
+# Get the principal components
+principal_components = pca.components_
+explained_variance = pca.explained_variance_
+print(principal_components, explained_variance)
