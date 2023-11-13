@@ -12,6 +12,9 @@ def load_mol_file(filename):
             df.loc[len(df)] = line.strip().split()
             line = file.readline()
     file.close()
+    df['x'] = df['x'].astype(float)
+    df['y'] = df['y'].astype(float)
+    df['z'] = df['z'].astype(float)
     return df
 
 
@@ -24,7 +27,8 @@ def center_of_gravity(filename):
     # Load the mol file (with the load_mol_file function)
     atoms = load_mol_file(filename)
     # Calculate the center of gravity of the structure
-    pass
+    COG = atoms[["x", "y", "z"]].mean()
+    return COG
 
 
 def select_cavity():
@@ -35,6 +39,7 @@ def select_cavity():
     :return: df of the cavity closest to the ligand
     """
     # compare the distance from the cavities to the ligand and return the closest cavity
+
     pass
 
 
