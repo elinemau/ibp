@@ -1,9 +1,6 @@
-import math
-
 import pandas as pd
 import numpy as np
 from itertools import combinations_with_replacement
-import os
 
 
 def load_mol_file(filename):
@@ -27,62 +24,29 @@ def load_mol_file(filename):
     return df
 
 
-def center_of_gravity(df):
+def center_of_gravity(filename):
     """
 
-    :param df: df generated from file with def load_mol_file
+    :param filename: file name of the structure (mol2 format)
     :return: center of gravity for the given structure
     """
+    # Load the mol file (with the load_mol_file function)
+    atoms = load_mol_file(filename)
     # Calculate the center of gravity of the structure
-    COG = df[["x", "y", "z"]].mean()
-    COG = COG.to_frame()
+    COG = atoms[["x", "y", "z"]].mean()
     return COG
 
-def calculate_nearest_point(df, reference):
-    """
 
-    :param df: columns are point, row 1=x, row 2=y, row3=z
-    :param reference: the reference point with same structure as df
-    :return: the index of the column in df that is closest to reference
-    """
-    distance = []
-    for column in df:
-        d = math.sqrt((reference[0].values[0]-df.values[0][column])**2 + (reference[0].values[1]-df.values[1][column])**2 + (reference[0].values[2]-df.values[2][column])**2)
-        distance.append(d)
-    return distance.index(min(distance))
-
-def select_cavity(folder):
+def select_cavity():
     """
     Investigates all cavities found with Volsite (with ligand restriction) and selects the one closest
     to the center of gravity of the ligand.
 
-    :param folder: folderpath containing output of volsite from one proteine
     :return: df of the cavity closest to the ligand
     """
-    cog = pd.DataFrame()
-    files = []
-    #select cavity files from the folder and put them in a list
-    for file in os.listdir(folder):
-        #include ALL in name, because N2, N4, n6,... are dublicate files
-        if "CAVITY" and "ALL" in file:
-            f = os.path.join(folder, file)
-            #get df from file
-            df = load_mol_file(f)
-            #calculate center of gravity
-            center = center_of_gravity(df)
-            cog = pd.concat([cog, center], axis=1)
-            files.append(str(file))
-        elif "protein" in file:
-            f = os.path.join(folder, file)
-            #get df from file
-            df = load_mol_file(f)
-            #calculate center of gravity
-            protein_center = center_of_gravity(df)
-        else:
-            continue
     # compare the distance from the cavities to the ligand and return the closest cavity
-    index = calculate_nearest_point(cog, protein_center)
-    return files[index]
+
+    pass
 
 
 def get_volsite_descriptors(filename, cavity_num):
@@ -139,9 +103,7 @@ def max_dist_cavity_points(cavity):
 
 
 if __name__ == '__main__':
-    cavity = select_cavity("C:\\Users\\32496\\PycharmProjects\\IBP\\1a28\\volsite")
-    print(cavity)
-    # cavity = load_mol_file("../1a28/volsite/CAVITY_N1_ALL.mol2")
-    # volsite_descriptors = get_volsite_descriptors("../1a28/volsite/1a28_prot_no_waters_descriptor.txt", 1)
+    cavity = load_mol_file("../1a28/volsite/CAVITY_N1_ALL.mol2")
+    volsite_descriptors = get_volsite_descriptors("../1a28/volsite/1a28_prot_no_waters_descriptor.txt", 1)
     # print(volsite_descriptors)
-    # print(max_dist_cavity_points(cavity))
+    print(max_dist_cavity_points(cavity))
