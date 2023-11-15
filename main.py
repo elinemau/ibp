@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from itertools import combinations_with_replacement
+from sklearn.decomposition import PCA
 import math
 import os
 
@@ -136,6 +137,16 @@ def max_dist_cavity_points(cavity):
 
     return max_distances
 
+def pc_retrieval(df):
+    """
+
+    :param df: pandas dataframe output from load_mol_file
+    :return: first and second principal component
+    """
+    point_cloud = df[["x", "y", "z"]].to_numpy()
+    pca=PCA(n_components=3)
+    pca.fit(point_cloud)
+    return pca.components_
 
 if __name__ == '__main__':
     cavity = select_cavity("C:\\Users\\32496\\PycharmProjects\\IBP\\1a28\\volsite")
