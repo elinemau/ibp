@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from itertools import combinations_with_replacement
 from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from scipy.spatial import ConvexHull
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import math
 import os
 
@@ -147,6 +150,26 @@ def pc_retrieval(df):
     pca=PCA(n_components=3)
     pca.fit(point_cloud)
     return pca.components_
+
+def plot_cavity(cavity):
+    """
+
+    :param cavity: cavity.mol2 file
+    :return: graph
+    """
+    point_cloud = cavity[["x", "y", "z"]].to_numpy()
+    # make mesh for covering surface
+    hull = ConvexHull(point_cloud)
+    boundary_points = point_cloud[hull.vertices]
+
+    # make fig to plot  mesh
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2], c='r', marker='o',
+               label='Boundary Points')
+    mesh = Poly3DCollection([point_cloud[s] for s in hull.simplices], alpha=0.25, edgecolor='k')
+    ax.add_collection3d(mesh)
+
 
 if __name__ == '__main__':
     cavity = select_cavity("C:\\Users\\32496\\PycharmProjects\\IBP\\1a28\\volsite")
