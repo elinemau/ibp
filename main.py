@@ -29,19 +29,25 @@ def load_mol_file(filename):
     df['z'] = df['z'].astype(float)
     return df
 
-def center_of_gravity(df):
+def get_points(df):
     """
 
-    :param df: df generated from file with def load_mol_file
+    :param df: mol2 file processed by load_mol2_file
+    :return: coordinates
+    """
+    return df[["x", "y", "z"]]
+
+def center_of_gravity(points):
+    """
+
+    :param points: coordinates retreived from get_points
     :return: center of gravity for the given structure
     """
     # Calculate the center of gravity of the structure
-    COG = df[["x", "y", "z"]].mean()
-    COG = COG.to_frame()
-    return COG
+    return points.mean()
 
 
-def calculate_nearest_point(df, reference):
+def calculate_nearest_point(df_points, reference_point):
     """
 
     :param df: columns are point, row 1=x, row 2=y, row3=z
@@ -49,8 +55,8 @@ def calculate_nearest_point(df, reference):
     :return: the index of the column in df that is closest to reference
     """
     distance = []
-    for column in df:
-        d = math.sqrt((reference[0].values[0]-df.values[0][column])**2 + (reference[0].values[1]-df.values[1][column])**2 + (reference[0].values[2]-df.values[2][column])**2)
+    for column in df_points:
+        d = math.sqrt((reference_point.iloc[0]-df_points[column].iloc[0])**2 + (reference_point.iloc[1]-df_points[column].iloc[1])**2 + (reference_point.iloc[2]-df_points[column].iloc[2])**2)
         distance.append(d)
     return distance.index(min(distance))
 
@@ -71,16 +77,17 @@ def select_cavity(folder):
             f = os.path.join(folder, file)
             # get df from file
             df = load_mol_file(f)
+            df_points = get_points(df)
             # calculate center of gravity
-            center = center_of_gravity(df)
-            cog = pd.concat([cog, center], axis=1)
+            center = center_of_gravity(df_points)
+            cog[file] = center
             files.append(str(file))
         elif "protein" in file:
             f = os.path.join(folder, file)
             # get df from file
             df = load_mol_file(f)
             # calculate center of gravity
-            protein_center = center_of_gravity(df)
+            protein_center = center_of_gravity(get_points(df))
         else:
             continue
     # compare the distance from the cavities to the ligand and return the closest cavity
@@ -151,30 +158,96 @@ def pc_retrieval(df):
     pca.fit(point_cloud)
     return pca.components_
 
-def plot_cavity(cavity):
+def convexhull(cavity_points):
     """
 
     :param cavity: cavity.mol2 file
-    :return: graph
+    :return: convex hull of cavity
     """
-    point_cloud = cavity[["x", "y", "z"]].to_numpy()
     # make mesh for covering surface
-    hull = ConvexHull(point_cloud)
-    boundary_points = point_cloud[hull.vertices]
+    return ConvexHull(cavity_points)
 
+def plot_cavity(cavity_points, hull):
+    """
+
+    :param cavity: cavity.mol2 file
+    :param hull: Convex hull retreived from convexHull def
+    :print: graph
+    """
+    boundary_points = cavity_points[hull.vertices]
     # make fig to plot  mesh
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2], c='r', marker='o',
                label='Boundary Points')
-    mesh = Poly3DCollection([point_cloud[s] for s in hull.simplices], alpha=0.25, edgecolor='k')
+    mesh = Poly3DCollection([cavity_points[s] for s in hull.simplices], alpha=0.25, edgecolor='k')
     ax.add_collection3d(mesh)
 
 
+def area(hull):
+    """
+
+    :param hull: convex hull retreived from convexhull def from cavity
+    :return: area of surface of cavity
+    """
+    surface_area = hull.area
+    return surface_area
+
+def distances_angles_shell_center(cavity_points, hull):
+    """
+
+    :param cavity: cavity.mol2 file
+    :return: longest and shortest distance from center to surface and the angle between them
+    """
+
+    # compute euclidean distances from center to all points
+    cavity_np = cavity_points.to_numpy()
+    # find center
+    center = center_of_gravity(cavity_points).to_numpy()
+    boundary_points = cavity_np[hull.vertices]
+
+    #compute distences between center and boundary points
+    distances = np.linalg.norm(boundary_points - center, axis=1)
+
+    #find the indices of the furthest and closest point
+    furthest_point_index = np.argmax(distances)
+    closest_point_index = np.argmin(distances)
+
+    #get coordinates of the furthest and closest point
+    furthest_point = boundary_points[furthest_point_index]
+    closest_point = boundary_points[closest_point_index]
+
+    #calculate distance to the furthest and closest points
+    distance_to_furthest_point = distances[furthest_point_index]
+    distance_to_closest_point = distances[closest_point_index]
+
+    # calculate angle between the two
+    # Calculate the vectors from the center to the closest and furthest points
+    closest_point_vector = closest_point - center
+    furthest_point_vector = furthest_point - center
+
+    # Calculate the dot product between the two vectors
+    dot_product = np.dot(closest_point_vector, furthest_point_vector)
+
+    # Calculate the magnitudes (lengths) of the vectors
+    closest_point_magnitude = np.linalg.norm(closest_point_vector)
+    furthest_point_magnitude = np.linalg.norm(furthest_point_vector)
+    # Calculate the angle in radians using the dot product and magnitudes
+    angle_radians = np.arccos(dot_product / (closest_point_magnitude * furthest_point_magnitude))
+
+    # Convert the angle from radians to degrees
+    angle_degrees = np.degrees(angle_radians)
+
+    return distance_to_closest_point, distance_to_furthest_point, angle_degrees
+
+
 if __name__ == '__main__':
-    cavity = select_cavity("C:\\Users\\32496\\PycharmProjects\\IBP\\1a28\\volsite")
-    print(cavity)
-    # cavity = load_mol_file("../1a28/volsite/CAVITY_N1_ALL.mol2")
+    #cavity = select_cavity("C:\\Users\\32496\\PycharmProjects\\IBP\\1a28\\volsite")
+    #print(cavity)
+    cavity = load_mol_file("1a28/volsite/CAVITY_N1_ALL.mol2")
+    #print(center_of_gravity(get_points(cavity)))
     # volsite_descriptors = get_volsite_descriptors("../1a28/volsite/1a28_prot_no_waters_descriptor.txt", 1)
     # print(volsite_descriptors)
+    #cog = center_of_gravity(get_points(cavity))
     # print(max_dist_cavity_points(cavity))
+    print(distances_angles_shell_center(get_points(cavity), convexhull(get_points(cavity))))

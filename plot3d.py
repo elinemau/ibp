@@ -32,6 +32,7 @@ point_cloud = df[["x", "y", "z"]].to_numpy()
 #make mesh for covering surface
 hull = ConvexHull(point_cloud)
 boundary_points = point_cloud[hull.vertices]
+print(boundary_points)
 
 #make fig to plot  mesh
 fig=plt.figure()

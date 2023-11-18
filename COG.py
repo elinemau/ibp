@@ -7,7 +7,7 @@ def remove_emptys(string):
 
 #making dataframe to make x y z coordinates accessible
 df = pd.DataFrame(columns=["number", "atom", "x", "y", "z"])
-with open("1a28\\volsite\\ligand.mol2", "r") as file:
+with open("1a28\\volsite\\CAVITY_N1_ALL.mol2", "r") as file:
     line = file.readline()
     while not line.startswith("@<TRIPOS>ATOM"):
         line = file.readline()
