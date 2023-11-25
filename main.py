@@ -10,6 +10,7 @@ import os
 from scipy.special import sph_harm
 from math import factorial
 
+
 def load_mol_file(filename):
     df = pd.DataFrame(columns=['atom_id', 'atom_name', 'x', 'y', 'z', 'atom_type', 'subst_id', 'subst_name', 'charge'])
     with open(filename, "r") as file:
@@ -21,14 +22,15 @@ def load_mol_file(filename):
             data = line.strip().split()
             # Convert 'x', 'y', and 'z' columns to float
             data[2:5] = map(float, data[2:5])
-            data[-1] = map(float, data[-1])
             df.loc[len(df)] = data
             line = file.readline()
     file.close()
     df['x'] = df['x'].astype(float)
     df['y'] = df['y'].astype(float)
     df['z'] = df['z'].astype(float)
+    df['charge'] = df['charge'].astype(float)
     return df
+
 
 def get_points(df):
     """
@@ -37,6 +39,7 @@ def get_points(df):
     :return: coordinates
     """
     return df[["x", "y", "z"]]
+
 
 def center_of_gravity(points):
     """
@@ -71,6 +74,7 @@ def select_cavity(folder):
     """
     cog = pd.DataFrame()
     files = []
+    protein_center = None
     # select cavity files from the folder and put them in a list
     for file in os.listdir(folder):
         # include ALL in name, because N2, N4, n6,... are dublicate files
@@ -238,6 +242,7 @@ def pc_retrieval(df):
     pca.fit(point_cloud)
     return pca.components_
 
+
 def convexhull(cavity_points):
     """
 
@@ -246,6 +251,7 @@ def convexhull(cavity_points):
     """
     # make mesh for covering surface
     return ConvexHull(cavity_points)
+
 
 def plot_cavity(cavity_points, hull):
     """
@@ -272,6 +278,7 @@ def area(hull):
     """
     surface_area = hull.area
     return surface_area
+
 
 def distances_angles_shell_center(cavity_points, hull):
     """
@@ -320,12 +327,14 @@ def distances_angles_shell_center(cavity_points, hull):
 
     return distance_to_closest_point, distance_to_furthest_point, angle_degrees
 
+
 def cartesian_to_spherical(cartesian_boundary_points):
     x, y, z = cartesian_boundary_points[:, 0], cartesian_boundary_points[:, 1], cartesian_boundary_points[:, 2]
     r = np.sqrt(x**2 + y**2 + z**2)
     theta = np.arctan2(y, x)
     phi = np.arccos(z / r)
     return r, theta, phi
+
 
 def compute_3d_descriptor(boundary_points, max_degree):
     r, theta, phi = cartesian_to_spherical(boundary_points)
@@ -341,6 +350,7 @@ def compute_3d_descriptor(boundary_points, max_degree):
             descriptors.append(descriptor)
     return descriptors
 
+
 def get_directory_input():
     while True:
         directory_path = input("Enter a directory path: ")
@@ -349,6 +359,7 @@ def get_directory_input():
             return directory_path
         else:
             print("Invalid directory. Please enter a valid directory path.")
+
 
 def list_subdirectories(directory):
     # Get the list of files in the directory
