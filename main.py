@@ -9,6 +9,7 @@ import math
 import os
 from scipy.special import sph_harm
 from math import factorial
+from pymol import cmd
 
 
 def load_mol_file(filename):
@@ -60,7 +61,9 @@ def calculate_nearest_point(df_points, reference_point):
     """
     distance = []
     for column in df_points:
-        d = math.sqrt((reference_point.iloc[0]-df_points[column].iloc[0])**2 + (reference_point.iloc[1]-df_points[column].iloc[1])**2 + (reference_point.iloc[2]-df_points[column].iloc[2])**2)
+        d = math.sqrt((reference_point.iloc[0] - df_points[column].iloc[0]) ** 2 + (
+                    reference_point.iloc[1] - df_points[column].iloc[1]) ** 2 + (
+                                  reference_point.iloc[2] - df_points[column].iloc[2]) ** 2)
         distance.append(d)
     return distance.index(min(distance))
 
@@ -112,12 +115,13 @@ def get_volsite_descriptors(filename, cavity_num):
     points = ['CZ', 'CA', 'O', 'OD1', 'OG', 'N', 'NZ', 'DU']
     column_names = ['volume'] + points
     for point in points:
-        column_names += [f'{point}_below_40', f'{point}_between_40_50', f'{point}_between_50_60', f'{point}_between_60_70',
+        column_names += [f'{point}_below_40', f'{point}_between_40_50', f'{point}_between_50_60',
+                         f'{point}_between_60_70',
                          f'{point}_between_70_80', f'{point}_between_80_90', f'{point}_between_90_100',
                          f'{point}_between_100_110', f'{point}_between_110_120', f'{point}_120']
     column_names += ['name']
     df = pd.read_csv(filename, sep=" ", index_col=False, header=None, names=column_names)
-    return df.loc[cavity_num-1, df.columns != 'name']
+    return df.loc[cavity_num - 1, df.columns != 'name']
 
 
 def max_dist_cavity_points(cavity):
@@ -161,7 +165,7 @@ def distance(point1, point2):
     :param point2: second point in 3D space
     :return: distance between point1 and point2
     """
-    return math.sqrt(sum((p1 - p2)**2 for p1, p2 in zip(point1, point2)))
+    return math.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(point1, point2)))
 
 
 def is_valid_triangle(side1, side2, side3):
@@ -238,7 +242,7 @@ def pc_retrieval(df):
     :return: first and second principal component
     """
     point_cloud = df[["x", "y", "z"]].to_numpy()
-    pca=PCA(n_components=3)
+    pca = PCA(n_components=3)
     pca.fit(point_cloud)
     return pca.components_
 
@@ -293,18 +297,18 @@ def distances_angles_shell_center(cavity_points, hull):
     center = center_of_gravity(cavity_points).to_numpy()
     boundary_points = cavity_np[hull.vertices]
 
-    #compute distences between center and boundary points
+    # compute distences between center and boundary points
     distances = np.linalg.norm(boundary_points - center, axis=1)
 
-    #find the indices of the furthest and closest point
+    # find the indices of the furthest and closest point
     furthest_point_index = np.argmax(distances)
     closest_point_index = np.argmin(distances)
 
-    #get coordinates of the furthest and closest point
+    # get coordinates of the furthest and closest point
     furthest_point = boundary_points[furthest_point_index]
     closest_point = boundary_points[closest_point_index]
 
-    #calculate distance to the furthest and closest points
+    # calculate distance to the furthest and closest points
     distance_to_furthest_point = distances[furthest_point_index]
     distance_to_closest_point = distances[closest_point_index]
 
@@ -330,7 +334,7 @@ def distances_angles_shell_center(cavity_points, hull):
 
 def cartesian_to_spherical(cartesian_boundary_points):
     x, y, z = cartesian_boundary_points[:, 0], cartesian_boundary_points[:, 1], cartesian_boundary_points[:, 2]
-    r = np.sqrt(x**2 + y**2 + z**2)
+    r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     theta = np.arctan2(y, x)
     phi = np.arccos(z / r)
     return r, theta, phi
@@ -349,6 +353,164 @@ def compute_3d_descriptor(boundary_points, max_degree):
             descriptor *= np.sqrt((2 * degree + 1) / (4 * np.pi))
             descriptors.append(descriptor)
     return descriptors
+
+
+def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0):
+    """
+    Identify and retrieve the residue indices of atoms within a specified distance threshold from a cavity within a
+    protein structure.
+
+    :param protein_file: str, The file path to the protein structure in a format compatible with PyMOL.
+    :param cavity_file: str, The file path to the cavity structure in a format compatible with PyMOL.
+    :param distance_threshold: float, optional, The distance threshold (in angstroms) used to filter atoms within the
+        cavity. Defaults to 4.0 angstroms.
+
+    :return: set, A set containing the residue indices of atoms within the specified distance threshold from the cavity.
+    """
+    # Load ligand and protein in PyMOL
+    cmd.load(protein_file)
+    cmd.load(cavity_file)
+
+    cavity_obj = cavity_file.split('/')[-1].split('.')[0]
+
+    # Select the object by name
+    selection_name = 'cavity_atoms'
+    cmd.select(selection_name, cavity_obj)
+
+    # Modify the selection to include residues within the distance threshold
+    cmd.select(selection_name, f'{selection_name} around {distance_threshold}')
+
+    # Print the residue numbers in the modified selection
+    model = cmd.get_model(selection_name)
+    res_lim = model.get_residues()
+
+    atom_list = model.atom
+    resid_indices = set()
+
+    for start, end in res_lim:  # extract the data we are interested in
+        for atom in atom_list[start:end]:
+            resid_indices.add(atom.resi)
+
+    return resid_indices
+
+
+def is_residue_exposed_to_cavity(protein, cavity, residue_id, dot_product_threshold=0.0):
+    """
+    Determine whether a residue is exposed to a cavity in a protein structure based on the cosine of angles.
+
+    :param protein: DataFrame, The protein structure data containing information about atoms.
+    :param cavity: DataFrame, The cavity structure data containing information about atoms.
+    :param residue_id: int, The identifier of the residue to be checked for exposure.
+    :param dot_product_threshold: float, optional, The threshold for the cosine of angles to consider a residue exposed.
+                                Defaults to 0.0.
+
+    :return: tuple (bool, str or None), A tuple indicating whether the residue is exposed and, if so, whether it is the
+        'side_chain' or 'backbone'.
+    """
+    cavity_center = center_of_gravity(get_points(cavity))
+
+    residue = protein[protein['subst_name'].str.endswith(str(residue_id))]
+
+    # Calculate the vector between the residue's backbone (N, CA, C) and the cavity's center of gravity
+    backbone_atoms = ['N', 'CA', 'C', 'O']
+    backbone = pd.concat([residue[residue['atom_name'] == atom] for atom in backbone_atoms], ignore_index=True)
+    backbone_center = center_of_gravity(get_points(backbone))
+    backbone_direction_vector = np.array(cavity_center - backbone_center)
+
+    # Calculate the vector between the residue's side chain and the cavity's center of gravity
+    side_chain_atoms = np.setdiff1d(np.unique(protein[['atom_name']].values), backbone_atoms)
+    side_chain = pd.concat([residue[residue['atom_name'] == atom] for atom in side_chain_atoms], ignore_index=True)
+    side_chain_center = center_of_gravity(get_points(side_chain))
+    side_chain_direction_vector = np.array(cavity_center - side_chain_center)
+
+    # Calculate the cosine of the angle between vectors
+    backbone_cosine_angle = np.dot(backbone_direction_vector, cavity_center) / (
+            np.linalg.norm(backbone_direction_vector) * np.linalg.norm(cavity_center))
+    side_chain_cosine_angle = np.dot(side_chain_direction_vector, cavity_center) / (
+            np.linalg.norm(side_chain_direction_vector) * np.linalg.norm(cavity_center))
+
+    # Check if the cosine of the angles are greater than the threshold to determine exposure
+    if side_chain_cosine_angle > dot_product_threshold:
+        return True, 'side_chain'
+    elif backbone_cosine_angle > dot_product_threshold:
+        return True, 'backbone'
+    else:
+        return False, None
+
+
+def check_exposed_residues(protein_file, protein, cavity_file, cavity, distance_threshold=4.0,
+                           dot_product_threshold=0.0):
+    """
+    Analyze and classify exposed residues surrounding a cavity in a protein structure.
+
+    :param protein_file: str, The file path to the protein structure in a format compatible with PyMOL.
+    :param protein: DataFrame, The protein structure data containing information about atoms.
+    :param cavity_file: str, The file path to the cavity structure in a format compatible with PyMOL.
+    :param cavity: DataFrame, The cavity structure data containing information about atoms.
+    :param distance_threshold: float, optional, The distance threshold (in angstroms) for identifying neighboring residues.
+                              Defaults to 4.0 angstroms.
+    :param dot_product_threshold: float, optional, The threshold for the cosine of angles to consider a residue exposed.
+                                Defaults to 0.0.
+
+    :return: DataFrame, A DataFrame containing information about exposed residues.
+    """
+    # Get the residues that surround the cavity
+    neighboring_residues = find_neighboring_residues(protein_file, cavity_file)
+
+    exposed_backbone = 0
+    exposed_side_chain = 0
+    polar_side_chain = 0
+    aromatic_side_chain = 0
+    pos_side_chain = 0
+    neg_side_chain = 0
+    hydrophobic_side_chain = 0
+
+    # Check each residue
+    for residue in neighboring_residues:
+        result, exposed_part = is_residue_exposed_to_cavity(protein, cavity, residue)
+        if exposed_part == 'backbone':
+            exposed_backbone += 1
+        elif exposed_part == 'side_chain':
+            exposed_side_chain += 1
+            res = protein['subst_name'][protein['subst_name'].str.endswith(str(residue))].values[0]
+            resn = res[:3]
+            # Check if the side chain is polar
+            if resn in ['SER', 'THR', 'CYS', 'PRO', 'ASN', 'GLN']:
+                polar_side_chain += 1
+            # Check if the side chain is aromatic
+            if resn in ['PHE', 'TRP', 'TYR']:
+                aromatic_side_chain += 1
+            # Check if the side chain is positive
+            if resn in ['LYS', 'ARG', 'HIS']:
+                pos_side_chain += 1
+            # Check if the side chain is negative
+            if resn in ['ASP', 'GLU']:
+                neg_side_chain += 1
+            # Check if the side chain is hydrophobic
+            if resn in ['GLY', 'PRO', 'PHE', 'ALA', 'ILE', 'LEU', 'VAL']:
+                hydrophobic_side_chain += 1
+
+    all_exposed = exposed_backbone + exposed_side_chain
+
+    exposed_residues = {'exposed_residues': all_exposed,
+                        'exposed_backbone_abs': exposed_backbone,
+                        'exposed_backbone_ratio_all': float(exposed_backbone / all_exposed),
+                        'exposed_side_chain_abs': exposed_side_chain,
+                        'exposed_side_chain_ratio_all': float(exposed_side_chain / all_exposed),
+                        'exposed_polar_side_abs': polar_side_chain,
+                        'exposed_polar_side_ratio': float(polar_side_chain / exposed_side_chain),
+                        'exposed_aromatic_side_abs': aromatic_side_chain,
+                        'exposed_aromatic_side_ratio': float(aromatic_side_chain / exposed_side_chain),
+                        'exposed_pos_side_abs': pos_side_chain,
+                        'exposed_pos_side_ratio': float(pos_side_chain / exposed_side_chain),
+                        'exposed_neg_side_abs': neg_side_chain,
+                        'exposed_neg_side_ratio': float(neg_side_chain / exposed_side_chain),
+                        'exposed_hydrophobic_side_abs': hydrophobic_side_chain,
+                        'exposed_hydrophobic_side_ratio': float(hydrophobic_side_chain / exposed_side_chain)
+                        }
+
+    df_exposed = pd.DataFrame(exposed_residues, index=[0])
+    return df_exposed
 
 
 def get_directory_input():
@@ -376,20 +538,24 @@ def list_subdirectories(directory):
 
 
 if __name__ == '__main__':
-    #enter directory to volsite files
-    directory = get_directory_input()
-    print("You selected:", directory)
-    input_proteins = list_subdirectories(directory)
-    for protein in input_proteins:
-        cavity_name = select_cavity(protein)
-        print(cavity_name)
-    #cavity_df = load_mol_file("1a28/volsite/CAVITY_N1_ALL.mol2")
-    #print(center_of_gravity(get_points(cavity)))
+    # enter directory to volsite files
+    # directory = get_directory_input()
+    # print("You selected:", directory)
+    # input_proteins = list_subdirectories(directory)
+    # for protein in input_proteins:
+    #     cavity_name = select_cavity(protein)
+    #     print(cavity_name)
+    protein_file = "../1a28/protein.mol2"
+    cavity_file = "../1a28/volsite/CAVITY_N1_ALL.mol2"
+    cavity_df = load_mol_file("../1a28/volsite/CAVITY_N1_ALL.mol2")
+    protein_df = load_mol_file(protein_file)
+    # print(center_of_gravity(get_points(cavity)))
     # volsite_descriptors = get_volsite_descriptors("../1a28/volsite/1a28_prot_no_waters_descriptor.txt", 1)
     # print(volsite_descriptors)
-    #cog = center_of_gravity(get_points(cavity))
+    # cog = center_of_gravity(get_points(cavity))
     # print(max_dist_cavity_points(cavity))
-    #print(distances_angles_shell_center(get_points(cavity), convexhull(get_points(cavity))))
-    #max_degree = 3
-    #zernike_descriptors = compute_3d_descriptor(boundary_points, max_degree)
-    #print(zernike_descriptors)
+    # print(distances_angles_shell_center(get_points(cavity), convexhull(get_points(cavity))))
+    # max_degree = 3
+    # zernike_descriptors = compute_3d_descriptor(boundary_points, max_degree)
+    # print(zernike_descriptors)
+    print(check_exposed_residues(protein_file, protein_df, cavity_file, cavity_df).iloc[0])
