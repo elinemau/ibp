@@ -62,25 +62,26 @@ def calculate_nearest_point(df_points, reference_point):
     distance = []
     for column in df_points:
         d = math.sqrt((reference_point.iloc[0] - df_points[column].iloc[0]) ** 2 + (
-                    reference_point.iloc[1] - df_points[column].iloc[1]) ** 2 + (
-                                  reference_point.iloc[2] - df_points[column].iloc[2]) ** 2)
+                reference_point.iloc[1] - df_points[column].iloc[1]) ** 2 + (
+                              reference_point.iloc[2] - df_points[column].iloc[2]) ** 2)
         distance.append(d)
     return distance.index(min(distance))
 
 
-def select_cavity(folder):
+def select_cavity(folder, ligand_file_path):
     """
     Investigates all cavities found with Volsite (with ligand restriction) and selects the one closest
     to the center of gravity of the ligand.
 
     :return: df of the cavity closest to the ligand
     """
+
     cog = pd.DataFrame()
+    cavities = []
     files = []
-    protein_center = None
     # select cavity files from the folder and put them in a list
     for file in os.listdir(folder):
-        # include ALL in name, because N2, N4, n6,... are dublicate files
+        # include ALL in name, because N2, N4, N6,... are duplicate files
         if "CAVITY" and "ALL" in file:
             f = os.path.join(folder, file)
             # get df from file
@@ -89,28 +90,39 @@ def select_cavity(folder):
             # calculate center of gravity
             center = center_of_gravity(df_points)
             cog[file] = center
-            files.append(str(file))
-        elif "protein" in file:
-            f = os.path.join(folder, file)
-            # get df from file
-            df = load_mol_file(f)
-            # calculate center of gravity
-            protein_center = center_of_gravity(get_points(df))
+            cavities.append(df)
+            files.append(file)
         else:
             continue
-    # compare the distance from the cavities to the ligand and return the closest cavity
-    index = calculate_nearest_point(cog, protein_center)
-    return files[index]
+    # get df from file
+    df_ligand = load_mol_file(ligand_file_path)
+    # calculate center of gravity
+    protein_center = center_of_gravity(get_points(df_ligand))
+
+    # check if there are any cavities found by Volsite
+    if len(cavities) > 0:
+        # compare the distance from the cavities to the ligand and return the closest cavity
+        index = calculate_nearest_point(cog, protein_center)
+        return files[index], index, cavities[index]
+    else:
+        return None, None, None
 
 
-def get_volsite_descriptors(filename, cavity_num):
+def get_volsite_descriptors(volsite_folder, cavity_index):
     """
     Loads the descriptors for a given cavity returned by Volsite into a pandas dataframe.
 
     :param filename: file name with volsite descriptors (.txt)
-    :param cavity_num: number of the selected cavity (the one closer to the ligand)
+    :param cavity_index: index of the selected cavity (the one closer to the ligand)
     :return: dataframe with volsite descriptors for a given cavity
     """
+    # get the volsite descriptor file
+    volsite_files = os.listdir(volsite_folder)
+    filename = ""
+    for file in volsite_files:
+        if file.endswith('descriptor.txt'):
+            filename = file
+            break
     # add a failsafe for the incorrect cavity_num later!!!
     points = ['CZ', 'CA', 'O', 'OD1', 'OG', 'N', 'NZ', 'DU']
     column_names = ['volume'] + points
@@ -120,8 +132,9 @@ def get_volsite_descriptors(filename, cavity_num):
                          f'{point}_between_70_80', f'{point}_between_80_90', f'{point}_between_90_100',
                          f'{point}_between_100_110', f'{point}_between_110_120', f'{point}_120']
     column_names += ['name']
-    df = pd.read_csv(filename, sep=" ", index_col=False, header=None, names=column_names)
-    return df.loc[cavity_num - 1, df.columns != 'name']
+    df = pd.read_csv(f'{volsite_folder}/{filename}', sep=" ", index_col=False, header=None, names=column_names)
+    descriptors = df.loc[cavity_index, df.columns != 'name']
+    return descriptors
 
 
 def max_dist_cavity_points(cavity):
@@ -264,14 +277,21 @@ def plot_cavity(cavity_points, hull):
     :param hull: Convex hull retreived from convexHull def
     :print: graph
     """
+
+    # Select the boundary points using hull.vertices
     boundary_points = cavity_points[hull.vertices]
-    # make fig to plot  mesh
+    # Create a figure and a subplot for 3D plotting
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2], c='r', marker='o',
-               label='Boundary Points')
+    # Scatter plot the boundary points in red
+    ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2],
+               c='r', marker='o', label='Boundary Points')
+    # Create a Poly3DCollection for the mesh using hull.simplices
     mesh = Poly3DCollection([cavity_points[s] for s in hull.simplices], alpha=0.25, edgecolor='k')
+    # Add the mesh to the plot
     ax.add_collection3d(mesh)
+    # Return the figure
+    return fig
 
 
 def area(hull):
@@ -438,8 +458,8 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id, dot_product_thresh
         return False, None
 
 
-def check_exposed_residues(protein_file, protein, cavity_file, cavity, distance_threshold=4.0,
-                           dot_product_threshold=0.0):
+def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_threshold=4.0,
+                         dot_product_threshold=0.0):
     """
     Analyze and classify exposed residues surrounding a cavity in a protein structure.
 
@@ -494,19 +514,25 @@ def check_exposed_residues(protein_file, protein, cavity_file, cavity, distance_
 
     exposed_residues = {'exposed_residues': all_exposed,
                         'exposed_backbone_abs': exposed_backbone,
-                        'exposed_backbone_ratio_all': float(exposed_backbone / all_exposed),
+                        'exposed_backbone_ratio_all': float(exposed_backbone / all_exposed) if all_exposed > 0 else 0.0,
                         'exposed_side_chain_abs': exposed_side_chain,
-                        'exposed_side_chain_ratio_all': float(exposed_side_chain / all_exposed),
+                        'exposed_side_chain_ratio_all': float(exposed_side_chain /
+                                                              all_exposed) if all_exposed > 0 else 0.0,
                         'exposed_polar_side_abs': polar_side_chain,
-                        'exposed_polar_side_ratio': float(polar_side_chain / exposed_side_chain),
+                        'exposed_polar_side_ratio': float(polar_side_chain /
+                                                          exposed_side_chain) if exposed_side_chain > 0 else 0.0,
                         'exposed_aromatic_side_abs': aromatic_side_chain,
-                        'exposed_aromatic_side_ratio': float(aromatic_side_chain / exposed_side_chain),
+                        'exposed_aromatic_side_ratio': float(aromatic_side_chain /
+                                                             exposed_side_chain) if exposed_side_chain > 0 else 0.0,
                         'exposed_pos_side_abs': pos_side_chain,
-                        'exposed_pos_side_ratio': float(pos_side_chain / exposed_side_chain),
+                        'exposed_pos_side_ratio': float(pos_side_chain /
+                                                        exposed_side_chain) if exposed_side_chain > 0 else 0.0,
                         'exposed_neg_side_abs': neg_side_chain,
-                        'exposed_neg_side_ratio': float(neg_side_chain / exposed_side_chain),
+                        'exposed_neg_side_ratio': float(neg_side_chain /
+                                                        exposed_side_chain) if exposed_side_chain > 0 else 0.0,
                         'exposed_hydrophobic_side_abs': hydrophobic_side_chain,
-                        'exposed_hydrophobic_side_ratio': float(hydrophobic_side_chain / exposed_side_chain)
+                        'exposed_hydrophobic_side_ratio': float(hydrophobic_side_chain /
+                                                                exposed_side_chain) if exposed_side_chain > 0 else 0.0
                         }
 
     df_exposed = pd.DataFrame(exposed_residues, index=[0])
@@ -538,24 +564,91 @@ def list_subdirectories(directory):
 
 
 if __name__ == '__main__':
-    # enter directory to volsite files
-    # directory = get_directory_input()
-    # print("You selected:", directory)
-    # input_proteins = list_subdirectories(directory)
-    # for protein in input_proteins:
-    #     cavity_name = select_cavity(protein)
-    #     print(cavity_name)
-    protein_file = "../1a28/protein.mol2"
-    cavity_file = "../1a28/volsite/CAVITY_N1_ALL.mol2"
-    cavity_df = load_mol_file("../1a28/volsite/CAVITY_N1_ALL.mol2")
-    protein_df = load_mol_file(protein_file)
-    # print(center_of_gravity(get_points(cavity)))
-    # volsite_descriptors = get_volsite_descriptors("../1a28/volsite/1a28_prot_no_waters_descriptor.txt", 1)
-    # print(volsite_descriptors)
-    # cog = center_of_gravity(get_points(cavity))
-    # print(max_dist_cavity_points(cavity))
-    # print(distances_angles_shell_center(get_points(cavity), convexhull(get_points(cavity))))
-    # max_degree = 3
-    # zernike_descriptors = compute_3d_descriptor(boundary_points, max_degree)
-    # print(zernike_descriptors)
-    print(check_exposed_residues(protein_file, protein_df, cavity_file, cavity_df).iloc[0])
+    # algorith is run from the directory containing the 3 directories (01_removed_waters_pdb, 02_input_files_mol,
+    # 03_volsite)
+    input_proteins = list_subdirectories("03_volsite")
+    all_descriptors = pd.DataFrame()
+
+    # Create a new directory to store the figures
+    # Replace 'path/to/new_folder' with the path where you want to create the folder
+    figures_folder_name = '04_figures'
+    # path_to_folder = 'path/to/' + figures_folder_name
+
+    # Check if the folder doesn't exist, then create it
+    # if not os.path.exists(figures_folder_name):
+    #     os.makedirs(figures_folder_name)
+    #     print(f"Folder '{figures_folder_name}' created successfully.")
+    # else:
+    #     print(f"Folder '{figures_folder_name}' already exists.")
+
+    tmp = 1
+
+    for protein_volsite in input_proteins:
+        print(tmp)
+        protein_code = protein_volsite.split('\\')[-1]
+        print(protein_code)
+
+        protein_path = f'02_input_files_mol/{protein_code}.mol2'
+        ligand_path = f'02_input_files_mol/{protein_code}_lig.mol2'
+        # Select the cavity that covers the ligand
+        cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_path)
+        cavity_path = f'03_volsite/{protein_code}/{cavity_file}'
+        # print(cavity_df)
+
+        if cavity_df is not None:
+            # Get the descriptors generated by Volsite
+            volsite_descriptors = get_volsite_descriptors(protein_volsite, cavity_index)
+
+            cavity_descriptors = pd.DataFrame(volsite_descriptors).transpose()
+            cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
+            cavity_descriptors.insert(0, "protein_code", protein_code)
+
+            # Cavity X, Y, Z coordinates
+            cavity_points_df = get_points(cavity_df)
+            # Add cavity area to the df
+            hull = convexhull(cavity_points_df)
+            cavity_area = area(hull)
+            # print("cavity area \n", cavity_area)
+            cavity_descriptors = cavity_descriptors.assign(area=[cavity_area])
+
+            # Add min & max distance to the center of the gravity & shell
+            # & the angle between those
+            distance_to_closest_point, distance_to_furthest_point, angle_degrees = (
+                distances_angles_shell_center(cavity_points_df, hull))
+            cavity_descriptors = cavity_descriptors.assign(min_dist=[distance_to_closest_point])
+            cavity_descriptors = cavity_descriptors.assign(max_dist=[distance_to_furthest_point])
+            cavity_descriptors = cavity_descriptors.assign(angle=[angle_degrees])
+
+            # add max dist between two cavity points
+            max_dist_pairs = max_dist_cavity_points(cavity_df)
+            cavity_descriptors = pd.concat([cavity_descriptors, max_dist_pairs], axis=1)
+
+            # Add max area of a triangle formed by three cavity points
+            max_area_triplets = max_triplet_area(cavity_df)
+            cavity_descriptors = pd.concat([cavity_descriptors, max_area_triplets], axis=1)
+
+            # Load the protein mol2 file
+            protein_df = load_mol_file(protein_path)
+            # Get residues exposed to the cavity
+            exposed_aa = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
+            cavity_descriptors = pd.concat([cavity_descriptors, exposed_aa], axis=1)
+
+            # make the plot and save it to a file in '04_figures' directory
+            # figure = plot_cavity(cavity_points_df, hull)
+            # figure.savefig(f'04_figures/{protein_code}_plot.png', dpi=300)
+
+            # Add the descriptors of the current cavity to the general dataframe
+            if all_descriptors.empty:
+                all_descriptors = cavity_descriptors
+            else:
+                all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
+        else:
+            no_cavity = pd.DataFrame()
+            no_cavity = no_cavity.set_axis([0], axis=0)
+            no_cavity.insert(0, "protein_code", protein_code)
+            print(no_cavity)
+            all_descriptors = pd.concat([all_descriptors, no_cavity.iloc[[-1]]], ignore_index=True)
+            print("all_descriptors \n", all_descriptors)
+        tmp += 1
+
+    all_descriptors.to_csv(f'all_descriptors.csv')
