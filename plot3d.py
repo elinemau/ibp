@@ -38,6 +38,7 @@ print(boundary_points)
 fig=plt.figure()
 ax=fig.add_subplot(111, projection='3d')
 ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2], c='r', marker='o', label='Boundary Points')
+ax.scatter(point_cloud[:,0], point_cloud[:,1], point_cloud[:,2], c='b', marker='o', label='grid')
 mesh = Poly3DCollection([point_cloud[s] for s in hull.simplices], alpha=0.25, edgecolor='k')
 ax.add_collection3d(mesh)
 

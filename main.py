@@ -7,7 +7,8 @@ from scipy.spatial import ConvexHull
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import math
 import os
-
+from scipy.special import sph_harm
+from math import factorial
 
 def load_mol_file(filename):
     df = pd.DataFrame(columns=['atom_id', 'atom_name', 'x', 'y', 'z', 'atom_type', 'subst_id', 'subst_name', 'charge'])
@@ -319,14 +320,65 @@ def distances_angles_shell_center(cavity_points, hull):
 
     return distance_to_closest_point, distance_to_furthest_point, angle_degrees
 
+def cartesian_to_spherical(cartesian_boundary_points):
+    x, y, z = cartesian_boundary_points[:, 0], cartesian_boundary_points[:, 1], cartesian_boundary_points[:, 2]
+    r = np.sqrt(x**2 + y**2 + z**2)
+    theta = np.arctan2(y, x)
+    phi = np.arccos(z / r)
+    return r, theta, phi
+
+def compute_3d_descriptor(boundary_points, max_degree):
+    r, theta, phi = cartesian_to_spherical(boundary_points)
+    descriptors = []
+    for degree in range(max_degree + 1):
+        for order in range(-degree, degree + 1):
+            descriptor = 0.0
+            for i in range(len(boundary_points)):
+                radial_term = np.sqrt((2 * degree + 1) / (4 * np.pi)) * sph_harm(order, degree, theta[i], phi[i])
+                normalization_term = np.sqrt(factorial(degree - abs(order)) / factorial(degree + abs(order)))
+                descriptor += normalization_term * radial_term
+            descriptor *= np.sqrt((2 * degree + 1) / (4 * np.pi))
+            descriptors.append(descriptor)
+    return descriptors
+
+def get_directory_input():
+    while True:
+        directory_path = input("Enter a directory path: ")
+        # Check if the provided path is a directory
+        if os.path.isdir(directory_path):
+            return directory_path
+        else:
+            print("Invalid directory. Please enter a valid directory path.")
+
+def list_subdirectories(directory):
+    # Get the list of files in the directory
+    input_proteins_list = []
+    subdirs = os.listdir(directory)
+    # Iterate over each file
+    for subd in subdirs:
+        # Get the full path of the file
+        subd_path = os.path.join(directory, subd)
+        # Check if the path is a subdir
+        if os.path.isdir(subd_path):
+            input_proteins_list.append(subd_path)
+    return input_proteins_list
+
 
 if __name__ == '__main__':
-    #cavity = select_cavity("C:\\Users\\32496\\PycharmProjects\\IBP\\1a28\\volsite")
-    #print(cavity)
-    cavity = load_mol_file("1a28/volsite/CAVITY_N1_ALL.mol2")
+    #enter directory to volsite files
+    directory = get_directory_input()
+    print("You selected:", directory)
+    input_proteins = list_subdirectories(directory)
+    for protein in input_proteins:
+        cavity_name = select_cavity(protein)
+        print(cavity_name)
+    #cavity_df = load_mol_file("1a28/volsite/CAVITY_N1_ALL.mol2")
     #print(center_of_gravity(get_points(cavity)))
     # volsite_descriptors = get_volsite_descriptors("../1a28/volsite/1a28_prot_no_waters_descriptor.txt", 1)
     # print(volsite_descriptors)
     #cog = center_of_gravity(get_points(cavity))
     # print(max_dist_cavity_points(cavity))
-    print(distances_angles_shell_center(get_points(cavity), convexhull(get_points(cavity))))
+    #print(distances_angles_shell_center(get_points(cavity), convexhull(get_points(cavity))))
+    #max_degree = 3
+    #zernike_descriptors = compute_3d_descriptor(boundary_points, max_degree)
+    #print(zernike_descriptors)
