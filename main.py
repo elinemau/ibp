@@ -283,6 +283,7 @@ def plot_cavity(cavity_points, hull, save_path):
     :param hull: Convex hull retreived from convexHull def
     :print: graph
     """
+    plt.switch_backend('agg')  # Use the Agg backend
 
     # Select the boundary points using hull.vertices
     boundary_points = cavity_points_df.iloc[hull.vertices].to_numpy()
