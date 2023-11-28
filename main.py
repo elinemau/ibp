@@ -375,42 +375,6 @@ def distances_angles_shell_center(cavity_points, hull):
     return distance_to_closest_point, distance_to_furthest_point, angle_degrees
 
 
-def cartesian_to_spherical(cartesian_boundary_points):
-    """
-    Converts Cartesian coordinates to spherical coordinates for a set of boundary points.
-
-    :param cartesian_boundary_points: numpy.ndarray, Array containing Cartesian coordinates of boundary points (x, y, z).
-    :return: tuple containing the converted spherical coordinates (r, theta, phi).
-        """
-    x, y, z = cartesian_boundary_points[:, 0], cartesian_boundary_points[:, 1], cartesian_boundary_points[:, 2]
-    r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-    theta = np.arctan2(y, x)
-    phi = np.arccos(z / r)
-    return r, theta, phi
-
-
-def compute_3d_descriptor(boundary_points, max_degree):
-    """
-    Computes 3D spherical harmonic descriptors for a set of boundary points.
-
-    :param boundary_points: numpy.ndarray: Array containing the boundary points in Cartesian coordinates (x, y, z).
-    :param max_degree: int: Maximum degree for the spherical harmonic descriptor computation.
-    :return: List of computed spherical harmonic descriptors."""
-
-    r, theta, phi = cartesian_to_spherical(boundary_points)
-    descriptors = []
-    for degree in range(max_degree + 1):
-        for order in range(-degree, degree + 1):
-            descriptor = 0.0
-            for i in range(len(boundary_points)):
-                radial_term = np.sqrt((2 * degree + 1) / (4 * np.pi)) * sph_harm(order, degree, theta[i], phi[i])
-                normalization_term = np.sqrt(factorial(degree - abs(order)) / factorial(degree + abs(order)))
-                descriptor += normalization_term * radial_term
-            descriptor *= np.sqrt((2 * degree + 1) / (4 * np.pi))
-            descriptors.append(descriptor)
-    return descriptors
-
-
 def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0):
     """
     Identify and retrieve the residue indices of atoms within a specified distance threshold from a cavity within a
