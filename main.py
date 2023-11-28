@@ -16,15 +16,11 @@ def load_mol_file(filename):
     """
     Loads the descriptors for a given cavity returned by Volsite into a pandas DataFrame.
 
-    :param filename: str
-        File name with Volsite descriptors (.txt).
+    :param filename: file name with Volsite descriptors (.txt).
+    :param cavity_index: int: Index of the selected cavity (the one closer to the ligand).
+    :return: pandas.DataFrame or None: DataFrame with Volsite descriptors for a given cavity, returns None if unsuccessful.
+    """
 
-    :param cavity_index: int
-        Index of the selected cavity (the one closer to the ligand).
-
-    :return: pandas.DataFrame or None
-        DataFrame with Volsite descriptors for a given cavity, returns None if unsuccessful.
-        """
     # check if the file is not (almost) empty
     f = open(filename, 'r')
     data = f.read().strip()
@@ -578,6 +574,85 @@ def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_th
     df_exposed = pd.DataFrame(exposed_residues, index=[0])
     return df_exposed
 
+def sphericity(cavity_points):
+    # Calculate the convex hull
+    hull = ConvexHull(cavity_points)
+
+    # Calculate the volume of the convex hull
+    hull_volume = hull.volume
+
+    # Calculate the surface area of the convex hull
+    hull_surface_area = hull.area
+
+    # Calculate the radius of a sphere with the same volume
+    sphere_radius = ((3 * hull_volume) / (4 * np.pi))**(1/3)
+
+    # Calculate the surface area of a sphere with the same volume
+    sphere_surface_area = 4 * np.pi * (sphere_radius**2)
+
+    # Calculate the sphericity
+    sphericity = hull_surface_area / sphere_surface_area
+
+    return sphericity
+
+def cubic_sphericity(cavity_points):
+    # Calculate the convex hull
+    hull = ConvexHull(cavity_points)
+
+    # Calculate the volume of the convex hull
+    hull_volume = hull.volume
+
+    # Calculate the surface area of the convex hull
+    hull_surface_area = hull.area
+
+    # Calculate the side length of a cube with the same volume
+    cube_side_length = (hull_volume)**(1/3)
+
+    # Calculate the surface area of a cube with the same volume
+    cube_surface_area = 6 * (cube_side_length**2)
+
+    # Calculate the cubic sphericity
+    cubic_sphericity = hull_surface_area / cube_surface_area
+
+    return cubic_sphericity
+
+def cone_sphericity(cavity_points):
+    # Calculate the convex hull
+    hull = ConvexHull(cavity_points)
+
+    # Calculate the volume of the convex hull
+    hull_volume = hull.volume
+
+    # Calculate the surface area of the convex hull
+    hull_surface_area = hull.area
+
+    # Calculate the radius and height of a cone with the same volume
+    cone_radius = np.sqrt(hull_surface_area / (np.pi * hull_volume))
+    cone_height = hull_volume / (np.pi * cone_radius**2)
+
+    # Calculate the surface area of a cone with the same volume
+    cone_surface_area = np.pi * cone_radius * (cone_radius + np.sqrt(cone_radius**2 + cone_height**2))
+
+    # Calculate the cone sphericity
+    cone_sphericity = hull_surface_area / cone_surface_area
+
+    return cone_sphericity
+
+
+def find_obb(cavity_points):
+    means = cavity_points.mean()
+    points = cavity_points - means
+    # Apply PCA to find principal components and directions
+    pca = PCA(n_components=3)
+    pca.fit(points)
+
+    # The components_ attribute contains the principal axes
+    principal_axes = pca.components_
+
+    # Calculate the extent along each principal axis
+    extent = np.max(points.dot(principal_axes.T), axis=0) - np.min(points.dot(principal_axes.T), axis=0)
+    return extent
+
 
 def get_directory_input():
     """
@@ -679,6 +754,21 @@ if __name__ == '__main__':
             # Get residues exposed to the cavity
             exposed_aa = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
             cavity_descriptors = pd.concat([cavity_descriptors, exposed_aa], axis=1)
+
+            # Calculate shape ration descriptors
+            sphere = sphericity(cavity_points_df)
+            cubic_sphere = cubic_sphericity(cavity_points_df)
+            cone_sphere = cone_sphericity(cavity_points_df)
+            # Add shape ration descriptors to the df
+            cavity_descriptors = cavity_descriptors.assign(sphere=[sphere])
+            cavity_descriptors = cavity_descriptors.assign(cubic_sphere=[cubic_sphere])
+            cavity_descriptors = cavity_descriptors.assign(cone_sphere=[cone_sphere])
+
+            # Compute the smallest box
+            smallest_box = find_obb(cavity_points_df)
+            cavity_descriptors = cavity_descriptors.assign(box_x=[smallest_box.iloc[0]])
+            cavity_descriptors = cavity_descriptors.assign(box_y=[smallest_box.iloc[1]])
+            cavity_descriptors = cavity_descriptors.assign(box_z=[smallest_box.iloc[2]])
 
             # Make the plot and save it to a file in '04_figures' directory
             save_path = f'04_figures/{protein_code}_plot.png'
