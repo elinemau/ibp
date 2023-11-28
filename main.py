@@ -643,8 +643,8 @@ if __name__ == '__main__':
             print("Residues exposed done\n")
 
             # make the plot and save it to a file in '04_figures' directory
-            # figure = plot_cavity(cavity_points_df, hull)
-            # figure.savefig(f'04_figures/{protein_code}_plot.png', dpi=300)
+            figure = plot_cavity(cavity_points_df, hull)
+            figure.savefig(f'04_figures/{protein_code}_plot.png', dpi=300)
 
             # Add the descriptors of the current cavity to the general dataframe
             if all_descriptors.empty:
