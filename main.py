@@ -276,7 +276,7 @@ def convexhull(cavity_points):
     return ConvexHull(cavity_points)
 
 
-def plot_cavity(cavity_points, hull):
+def plot_cavity(cavity_points, hull, save_path):
     """
 
     :param cavity: cavity.mol2 file
@@ -297,8 +297,8 @@ def plot_cavity(cavity_points, hull):
     # Add the mesh to the plot
     ax.add_collection3d(mesh)
     # Return the figure
-    return fig
-
+    plt.savefig(save_path)  # Save the plot to a file
+    plt.close(fig)  # Close the figure to release memory
 
 def area(hull):
     """
@@ -647,8 +647,9 @@ if __name__ == '__main__':
             print("Residues exposed done\n")
 
             # make the plot and save it to a file in '04_figures' directory
-            figure = plot_cavity(cavity_points_df.to_numpy(), hull)
-            figure.savefig(f'04_figures/{protein_code}_plot.png', dpi=300)
+            save_path = f'04_figures/{protein_code}_plot.png'
+            figure = plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
+            # figure.savefig(f'04_figures/{protein_code}_plot.png', dpi=300)
 
             # Add the descriptors of the current cavity to the general dataframe
             if all_descriptors.empty:
