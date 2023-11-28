@@ -79,6 +79,8 @@ def select_cavity(folder, ligand_file_path):
     cog = pd.DataFrame()
     cavities = []
     files = []
+    datasets = []
+    datapoints=[]
     # select cavity files from the folder and put them in a list
     for file in os.listdir(folder):
         # include ALL in name, because N2, N4, N6,... are duplicate files
@@ -92,17 +94,19 @@ def select_cavity(folder, ligand_file_path):
             cog[file] = center
             cavities.append(df)
             files.append(file)
+            datasets.append(df)
+            datapoints.append(df_points)
         else:
             continue
     # get df from file
     df_ligand = load_mol_file(ligand_file_path)
     # calculate center of gravity
-    protein_center = center_of_gravity(get_points(df_ligand))
+    ligand_center = center_of_gravity(get_points(df_ligand))
 
     # check if there are any cavities found by Volsite
     if len(cavities) > 0:
         # compare the distance from the cavities to the ligand and return the closest cavity
-        index = calculate_nearest_point(cog, protein_center)
+        index = calculate_nearest_point(cog, ligand_center)
         return files[index], index, cavities[index]
     else:
         return None, None, None
