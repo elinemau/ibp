@@ -296,10 +296,10 @@ def plot_cavity(cavity_points, hull, save_path):
     :param save_path: file path to save the generated plot.
 
     """
-    plt.switch_backend('agg')  # Use the Agg backend
-
     # Select the boundary points using hull.vertices
     boundary_points = cavity_points_df.iloc[hull.vertices].to_numpy()
+    # Turn of the interactive plotting, so the window with the plot doesn't pop up
+    plt.switch_backend('agg')
     # Create a figure and a subplot for 3D plotting
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
