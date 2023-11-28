@@ -13,6 +13,18 @@ from pymol import cmd
 
 
 def load_mol_file(filename):
+    """
+    Loads the descriptors for a given cavity returned by Volsite into a pandas DataFrame.
+
+    :param filename: str
+        File name with Volsite descriptors (.txt).
+
+    :param cavity_index: int
+        Index of the selected cavity (the one closer to the ligand).
+
+    :return: pandas.DataFrame or None
+        DataFrame with Volsite descriptors for a given cavity, returns None if unsuccessful.
+        """
     # check if the file is not (almost) empty
     f = open(filename, 'r')
     data = f.read().strip()
@@ -60,6 +72,7 @@ def center_of_gravity(points):
 
 def calculate_nearest_point(df_points, reference_point):
     """
+    Calculates the index of the column in 'df_points' that is closest to the 'reference_point'.
 
     :param df: columns are point, row 1=x, row 2=y, row3=z
     :param reference: the reference point with same structure as df
@@ -256,6 +269,7 @@ def max_triplet_area(cavity):
 
 def pc_retrieval(df):
     """
+    Computes the first and second principal components from a pandas DataFrame.
 
     :param df: pandas dataframe output from load_mol_file
     :return: first and second principal component
@@ -268,8 +282,9 @@ def pc_retrieval(df):
 
 def convexhull(cavity_points):
     """
+    Computes the convex hull of a set of points representing a cavity.
 
-    :param cavity: cavity.mol2 file
+    :param cavity: cavity.mol2 file obtained with the function get_points()
     :return: convex hull of cavity
     """
     # make mesh for covering surface
@@ -278,10 +293,12 @@ def convexhull(cavity_points):
 
 def plot_cavity(cavity_points, hull, save_path):
     """
+    Plot the 3D cavity and save it to a file. Doesn't return anything.
 
-    :param cavity: cavity.mol2 file
+    :param cavity_points: pandas.DataFrame obtained with the function get_points()
     :param hull: Convex hull retreived from convexHull def
-    :print: graph
+    :param save_path: file path to save the generated plot.
+
     """
     plt.switch_backend('agg')  # Use the Agg backend
 
@@ -303,8 +320,9 @@ def plot_cavity(cavity_points, hull, save_path):
 
 def area(hull):
     """
+    Calculates the surface area of a cavity represented by a convex hull.
 
-    :param hull: convex hull retreived from convexhull def from cavity
+    :param hull: convex hull retrieved from convexhull def from cavity
     :return: area of surface of cavity
     """
     surface_area = hull.area
@@ -313,9 +331,11 @@ def area(hull):
 
 def distances_angles_shell_center(cavity_points, hull):
     """
+    Computes the longest and shortest distance from the center to the surface of a cavity, along with the angle between them.
 
-    :param cavity: cavity.mol2 file
-    :return: longest and shortest distance from center to surface and the angle between them
+    :param cavity_points: pandas.DataFrame containing points representing the cavity, obtained from a cavity.mol2 file and def get_points()
+    :param hull: scipy.spatial.ConvexHull: Convex hull object representing the surface of the cavity.
+    :return: tuple: containing the shortest distance, longest distance, and angle between center and surface.
     """
 
     # compute euclidean distances from center to all points
@@ -360,6 +380,12 @@ def distances_angles_shell_center(cavity_points, hull):
 
 
 def cartesian_to_spherical(cartesian_boundary_points):
+    """
+    Converts Cartesian coordinates to spherical coordinates for a set of boundary points.
+
+    :param cartesian_boundary_points: numpy.ndarray, Array containing Cartesian coordinates of boundary points (x, y, z).
+    :return: tuple containing the converted spherical coordinates (r, theta, phi).
+        """
     x, y, z = cartesian_boundary_points[:, 0], cartesian_boundary_points[:, 1], cartesian_boundary_points[:, 2]
     r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     theta = np.arctan2(y, x)
@@ -368,6 +394,13 @@ def cartesian_to_spherical(cartesian_boundary_points):
 
 
 def compute_3d_descriptor(boundary_points, max_degree):
+    """
+    Computes 3D spherical harmonic descriptors for a set of boundary points.
+
+    :param boundary_points: numpy.ndarray: Array containing the boundary points in Cartesian coordinates (x, y, z).
+    :param max_degree: int: Maximum degree for the spherical harmonic descriptor computation.
+    :return: List of computed spherical harmonic descriptors."""
+
     r, theta, phi = cartesian_to_spherical(boundary_points)
     descriptors = []
     for degree in range(max_degree + 1):
@@ -547,6 +580,12 @@ def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_th
 
 
 def get_directory_input():
+    """
+    Requests user input for a directory path until a valid directory path is provided.
+
+    :return: str: Valid directory path obtained from user input.
+    :return:
+    """
     while True:
         directory_path = input("Enter a directory path: ")
         # Check if the provided path is a directory
@@ -557,6 +596,12 @@ def get_directory_input():
 
 
 def list_subdirectories(directory):
+    """
+    Retrieves a list of subdirectories within the specified directory.
+
+    :param directory: Path to the directory.
+    :return: list of subdirectory paths found within the specified directory.
+    """
     # Get the list of files in the directory
     input_proteins_list = []
     subdirs = os.listdir(directory)
@@ -577,10 +622,7 @@ if __name__ == '__main__':
     all_descriptors = pd.DataFrame()
 
     # Create a new directory to store the figures
-    # Replace 'path/to/new_folder' with the path where you want to create the folder
     figures_folder_name = '04_figures'
-    # path_to_folder = 'path/to/' + figures_folder_name
-
     # Check if the folder doesn't exist, then create it
     if not os.path.exists(figures_folder_name):
         os.makedirs(figures_folder_name)
@@ -605,59 +647,48 @@ if __name__ == '__main__':
             print(cavity_df.shape[0])
             # Get the descriptors generated by Volsite
             volsite_descriptors = get_volsite_descriptors(protein_volsite, cavity_index)
-            print("Volsite descriptors done\n")
 
             cavity_descriptors = pd.DataFrame(volsite_descriptors).transpose()
             cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
             cavity_descriptors.insert(0, "protein_code", protein_code)
-            print("Cavity descriptors done\n")
 
             # Cavity X, Y, Z coordinates
             cavity_points_df = get_points(cavity_df)
             # Add cavity area to the df
             hull = convexhull(cavity_points_df)
             cavity_area = area(hull)
-            # print("cavity area \n", cavity_area)
             cavity_descriptors = cavity_descriptors.assign(area=[cavity_area])
-            print("Area descriptor done\n")
 
-            # Add min & max distance to the center of the gravity & shell
-            # & the angle between those
+            # Add min & max distance to the center of the gravity & shell & the angle between those
             distance_to_closest_point, distance_to_furthest_point, angle_degrees = (
                 distances_angles_shell_center(cavity_points_df, hull))
             cavity_descriptors = cavity_descriptors.assign(min_dist=[distance_to_closest_point])
             cavity_descriptors = cavity_descriptors.assign(max_dist=[distance_to_furthest_point])
             cavity_descriptors = cavity_descriptors.assign(angle=[angle_degrees])
-            print("Add min & max distance & anlge done\n")
 
-            # add max dist between two cavity points
+            # Add max dist between two cavity points to the descriptors df
             max_dist_pairs = max_dist_cavity_points(cavity_df)
             cavity_descriptors = pd.concat([cavity_descriptors, max_dist_pairs], axis=1)
-            print("Add max dist between two cavity points done\n")
 
             # Add max area of a triangle formed by three cavity points
             max_area_triplets = max_triplet_area(cavity_df)
             cavity_descriptors = pd.concat([cavity_descriptors, max_area_triplets], axis=1)
-            print("Add max area of a triangle done\n")
 
             # Load the protein mol2 file
             protein_df = load_mol_file(protein_path)
             # Get residues exposed to the cavity
             exposed_aa = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
             cavity_descriptors = pd.concat([cavity_descriptors, exposed_aa], axis=1)
-            print("Residues exposed done\n")
 
-            # make the plot and save it to a file in '04_figures' directory
+            # Make the plot and save it to a file in '04_figures' directory
             save_path = f'04_figures/{protein_code}_plot.png'
-            figure = plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
-            # figure.savefig(f'04_figures/{protein_code}_plot.png', dpi=300)
+            plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
 
             # Add the descriptors of the current cavity to the general dataframe
             if all_descriptors.empty:
                 all_descriptors = cavity_descriptors
             else:
                 all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
-                print("Combine all descriptors of one protein done")
 
         else:
             no_cavity = pd.DataFrame()
