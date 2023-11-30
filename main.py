@@ -1,15 +1,14 @@
 import pandas as pd
 import numpy as np
-from itertools import combinations, combinations_with_replacement, product
+from itertools import combinations_with_replacement, product
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import math
 import os
-from scipy.special import sph_harm
-from math import factorial
 from pymol import cmd
+from sys import argv
 
 
 def load_mol_file(filename):
@@ -17,7 +16,6 @@ def load_mol_file(filename):
     Loads the descriptors for a given cavity returned by Volsite into a pandas DataFrame.
 
     :param filename: file name with Volsite descriptors (.txt).
-    :param cavity_index: int: Index of the selected cavity (the one closer to the ligand).
     :return: pandas.DataFrame or None: DataFrame with Volsite descriptors for a given cavity, returns None if unsuccessful.
     """
 
@@ -70,8 +68,8 @@ def calculate_nearest_point(df_points, reference_point):
     """
     Calculates the index of the column in 'df_points' that is closest to the 'reference_point'.
 
-    :param df: columns are point, row 1=x, row 2=y, row3=z
-    :param reference: the reference point with same structure as df
+    :param df_points: columns are point, row 1=x, row 2=y, row3=z
+    :param reference_point: the reference point with same structure as df
     :return: the index of the column in df that is closest to reference
     """
     distance = []
@@ -127,7 +125,7 @@ def get_volsite_descriptors(volsite_folder, cavity_index):
     """
     Loads the descriptors for a given cavity returned by Volsite into a pandas dataframe.
 
-    :param filename: file name with volsite descriptors (.txt)
+    :param volsite_folder: folder with volsite output
     :param cavity_index: index of the selected cavity (the one closer to the ligand)
     :return: dataframe with volsite descriptors for a given cavity
     """
@@ -246,9 +244,9 @@ def max_triplet_area(cavity):
     point_types.sort()
 
     # Note: function combinations instead of combinations_with_replacement is used to save computational time
-    max_areas = pd.DataFrame(0.0, columns=list(combinations(point_types, 3)), index=[0])
+    max_areas = pd.DataFrame(0.0, columns=list(combinations_with_replacement(point_types, 3)), index=[0])
 
-    for triplet_combination in combinations(grouped_cavity, 3):
+    for triplet_combination in combinations_with_replacement(grouped_cavity, 3):
         triplet = tuple(sorted([atom_type for atom_type, _ in triplet_combination]))
 
         # Extract coordinates from the DataFrame
@@ -280,7 +278,7 @@ def convexhull(cavity_points):
     """
     Computes the convex hull of a set of points representing a cavity.
 
-    :param cavity: cavity.mol2 file obtained with the function get_points()
+    :param cavity_points: cavity.mol2 file obtained with the function get_points()
     :return: convex hull of cavity
     """
     # make mesh for covering surface
@@ -292,7 +290,7 @@ def plot_cavity(cavity_points, hull, save_path):
     Plot the 3D cavity and save it to a file. Doesn't return anything.
 
     :param cavity_points: pandas.DataFrame obtained with the function get_points()
-    :param hull: Convex hull retreived from convexHull def
+    :param hull: Convex hull retrieved from convexHull def
     :param save_path: file path to save the generated plot.
 
     """
@@ -313,6 +311,7 @@ def plot_cavity(cavity_points, hull, save_path):
     # Return the figure
     plt.savefig(save_path)  # Save the plot to a file
     plt.close(fig)  # Close the figure to release memory
+
 
 def area(hull):
     """
@@ -538,6 +537,7 @@ def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_th
     df_exposed = pd.DataFrame(exposed_residues, index=[0])
     return df_exposed
 
+
 def sphericity(cavity_points):
     # Calculate the convex hull
     hull = ConvexHull(cavity_points)
@@ -559,6 +559,7 @@ def sphericity(cavity_points):
 
     return sphericity
 
+
 def cubic_sphericity(cavity_points):
     # Calculate the convex hull
     hull = ConvexHull(cavity_points)
@@ -579,6 +580,7 @@ def cubic_sphericity(cavity_points):
     cubic_sphericity = hull_surface_area / cube_surface_area
 
     return cubic_sphericity
+
 
 def cone_sphericity(cavity_points):
     # Calculate the convex hull
@@ -618,22 +620,6 @@ def find_obb(cavity_points):
     return extent
 
 
-def get_directory_input():
-    """
-    Requests user input for a directory path until a valid directory path is provided.
-
-    :return: str: Valid directory path obtained from user input.
-    :return:
-    """
-    while True:
-        directory_path = input("Enter a directory path: ")
-        # Check if the provided path is a directory
-        if os.path.isdir(directory_path):
-            return directory_path
-        else:
-            print("Invalid directory. Please enter a valid directory path.")
-
-
 def list_subdirectories(directory):
     """
     Retrieves a list of subdirectories within the specified directory.
@@ -655,35 +641,28 @@ def list_subdirectories(directory):
 
 
 if __name__ == '__main__':
-    # algorith is run from the directory containing the 3 directories (01_removed_waters_pdb, 02_input_files_mol,
-    # 03_volsite)
-    input_proteins = list_subdirectories("03_volsite")
+    # Usage:
+    # python3 main.py [volsite_output_folder] [descriptor_csv_file]
+    volsite_output = argv[1]
+    input_proteins = list_subdirectories(volsite_output)
+
+    output_csv = argv[2]
+    if not output_csv.endswith('.csv'):
+        output_csv = argv[2] + '.csv'
     all_descriptors = pd.DataFrame()
 
-    # Create a new directory to store the figures
-    figures_folder_name = '04_figures'
-    # Check if the folder doesn't exist, then create it
-    if not os.path.exists(figures_folder_name):
-        os.makedirs(figures_folder_name)
-        print(f"Folder '{figures_folder_name}' created successfully.")
-    else:
-        print(f"Folder '{figures_folder_name}' already exists.")
-
-    tmp = 1
-
     for protein_volsite in input_proteins:
-        print(tmp)
-        protein_code = protein_volsite.split('\\')[-1]
-        print(protein_code)
+        protein_code = protein_volsite.split('/')[-1]
+        print(f'Calculating descriptors for {protein_code}...')
 
-        protein_path = f'02_input_files_mol/{protein_code}.mol2'
-        ligand_path = f'02_input_files_mol/{protein_code}_lig.mol2'
+        protein_path = f'{protein_volsite}/protein_no_solvent.mol2'
+        ligand_path = f'{protein_volsite}/ligand.mol2'
         # Select the cavity that covers the ligand
         cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_path)
-        cavity_path = f'03_volsite/{protein_code}/{cavity_file}'
+        cavity_path = f'{protein_volsite}/{cavity_file}'
 
         if cavity_df is not None and load_mol_file(protein_path) is not None:
-            print(cavity_df.shape[0])
+            print(f'Cavity size: {cavity_df.shape[0]}')
             # Get the descriptors generated by Volsite
             volsite_descriptors = get_volsite_descriptors(protein_volsite, cavity_index)
 
@@ -735,7 +714,7 @@ if __name__ == '__main__':
             cavity_descriptors = cavity_descriptors.assign(box_z=[smallest_box.iloc[2]])
 
             # Make the plot and save it to a file in '04_figures' directory
-            save_path = f'04_figures/{protein_code}_plot.png'
+            save_path = f'{protein_volsite}/cavity_plot.png'
             plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
 
             # Add the descriptors of the current cavity to the general dataframe
@@ -745,13 +724,15 @@ if __name__ == '__main__':
                 all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
 
         else:
+            print('No cavity for this structure')
             no_cavity = pd.DataFrame()
             no_cavity = no_cavity.set_axis([0], axis=0)
             no_cavity.insert(0, "protein_code", protein_code)
-            print(no_cavity)
             all_descriptors = pd.concat([all_descriptors, no_cavity.iloc[[-1]]], ignore_index=True)
-            print("all_descriptors \n", all_descriptors)
-        tmp += 1
-        all_descriptors.to_csv(f'all_descriptors.csv')
 
-    all_descriptors.to_csv(f'all_descriptors.csv')
+        print('Done')
+        print('-----------------------------------')
+        all_descriptors.to_csv(output_csv)
+
+    all_descriptors.to_csv(output_csv)
+    print('Calculation of descriptors for each structure is finished!')
