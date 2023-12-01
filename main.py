@@ -428,7 +428,7 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id, dot_product_thresh
     """
     cavity_center = center_of_gravity(get_points(cavity))
 
-    residue = protein[protein['subst_name'].str.endswith(str(residue_id))]
+    residue = protein[protein['subst_id'] == residue_id]
 
     # Calculate the vector between the residue's backbone (N, CA, C) and the cavity's center of gravity
     backbone_atoms = ['N', 'CA', 'C', 'O']
@@ -491,8 +491,7 @@ def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_th
             exposed_backbone += 1
         elif exposed_part == 'side_chain':
             exposed_side_chain += 1
-            res = protein['subst_name'][protein['subst_name'].str.endswith(str(residue))].values[0]
-            resn = res[:3]
+            resn = protein['subst_name'][protein['subst_id'] == residue].values[0]
             # Check if the side chain is polar
             if resn in ['SER', 'THR', 'CYS', 'PRO', 'ASN', 'GLN']:
                 polar_side_chain += 1
