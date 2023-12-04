@@ -295,7 +295,7 @@ def plot_cavity(cavity_points, hull, save_path):
 
     """
     # Select the boundary points using hull.vertices
-    boundary_points = cavity_points_df.iloc[hull.vertices].to_numpy()
+    boundary_points = cavity_points.iloc[hull.vertices].to_numpy()
     # Turn of the interactive plotting, so the window with the plot doesn't pop up
     plt.switch_backend('agg')
     # Create a figure and a subplot for 3D plotting
@@ -413,52 +413,66 @@ def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0)
     return resid_indices
 
 
-def is_residue_exposed_to_cavity(protein, cavity, residue_id, dot_product_threshold=0.0):
+def is_residue_exposed_to_cavity(protein, cavity, residue_id):
     """
     Determine whether a residue is exposed to a cavity in a protein structure based on the cosine of angles.
 
     :param protein: DataFrame, The protein structure data containing information about atoms.
     :param cavity: DataFrame, The cavity structure data containing information about atoms.
     :param residue_id: int, The identifier of the residue to be checked for exposure.
-    :param dot_product_threshold: float, optional, The threshold for the cosine of angles to consider a residue exposed.
-                                Defaults to 0.0.
 
     :return: tuple (bool, str or None), A tuple indicating whether the residue is exposed and, if so, whether it is the
         'side_chain' or 'backbone'.
     """
-    cavity_center = center_of_gravity(get_points(cavity))
+    cavity_points = get_points(cavity)
+    cavity_center = center_of_gravity(cavity_points)
 
+    print(residue_id)
     residue = protein[protein['subst_id'] == residue_id]
+    # residue_center = center_of_gravity(get_points(residue))
 
     # Calculate the vector between the residue's backbone (N, CA, C) and the cavity's center of gravity
     backbone_atoms = ['N', 'CA', 'C', 'O']
     backbone = pd.concat([residue[residue['atom_name'] == atom] for atom in backbone_atoms], ignore_index=True)
     backbone_center = center_of_gravity(get_points(backbone))
-    backbone_direction_vector = np.array(cavity_center - backbone_center)
+    # backbone_direction_vector = np.array(cavity_center - backbone_center)
 
     # Calculate the vector between the residue's side chain and the cavity's center of gravity
     side_chain_atoms = np.setdiff1d(np.unique(protein[['atom_name']].values), backbone_atoms)
     side_chain = pd.concat([residue[residue['atom_name'] == atom] for atom in side_chain_atoms], ignore_index=True)
     side_chain_center = center_of_gravity(get_points(side_chain))
-    side_chain_direction_vector = np.array(cavity_center - side_chain_center)
+    # side_chain_direction_vector = np.array(cavity_center - side_chain_center)
 
-    # Calculate the cosine of the angle between vectors
-    backbone_cosine_angle = np.dot(backbone_direction_vector, cavity_center) / (
-            np.linalg.norm(backbone_direction_vector) * np.linalg.norm(cavity_center))
-    side_chain_cosine_angle = np.dot(side_chain_direction_vector, cavity_center) / (
-            np.linalg.norm(side_chain_direction_vector) * np.linalg.norm(cavity_center))
+    backbone_side_chain_vector = np.array(side_chain_center - backbone_center)
+    residue_cavity_vector = np.array(cavity_center - backbone_center)
+    cosine_angle = np.dot(backbone_side_chain_vector, residue_cavity_vector) / (
+            np.linalg.norm(backbone_side_chain_vector) * np.linalg.norm(residue_cavity_vector))
+    print(f'cosine_angle: {cosine_angle}')
 
-    # Check if the cosine of the angles are greater than the threshold to determine exposure
-    if side_chain_cosine_angle > dot_product_threshold:
+    cavity_radius, sphericity_ratio = sphericity(cavity_points)
+    print(f'cavity_radius: {cavity_radius}')
+
+    backbone_cavity_dist = np.linalg.norm(backbone_center - cavity_center)
+    print(f'backbone_cavity_dist: {backbone_cavity_dist}')
+
+    sphere_dist = math.sqrt(cavity_radius**2 + backbone_cavity_dist**2)
+    print(f'sphere_dist: {sphere_dist}')
+
+    threshold = (backbone_cavity_dist**2 + sphere_dist**2 - cavity_radius**2) / (
+            2 * backbone_cavity_dist * sphere_dist)
+    print(f'threshold: {threshold}')
+
+    if threshold <= cosine_angle <= 1:
+        print("side chain")
         return True, 'side_chain'
-    elif backbone_cosine_angle > dot_product_threshold:
+    elif -1 <= cosine_angle <= -threshold:
+        print("backbone")
         return True, 'backbone'
     else:
         return False, None
 
 
-def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_threshold=4.0,
-                         dot_product_threshold=0.0):
+def get_exposed_residues(protein_file, protein, cavity_file, cavity, distance_threshold=4.0):
     """
     Analyze and classify exposed residues surrounding a cavity in a protein structure.
 
@@ -556,7 +570,7 @@ def sphericity(cavity_points):
     # Calculate the sphericity
     sphericity = hull_surface_area / sphere_surface_area
 
-    return sphericity
+    return sphere_radius, sphericity
 
 
 def cubic_sphericity(cavity_points):
@@ -642,96 +656,107 @@ def list_subdirectories(directory):
 if __name__ == '__main__':
     # Usage:
     # python3 main.py [volsite_output_folder] [descriptor_csv_file]
-    volsite_output = argv[1]
-    input_proteins = list_subdirectories(volsite_output)
+    # volsite_output = argv[1]
+    # input_proteins = list_subdirectories(volsite_output)
 
-    output_csv = argv[2]
+    # output_csv = argv[2]
+    output_csv = "test.csv"
     if not output_csv.endswith('.csv'):
         output_csv = argv[2] + '.csv'
     all_descriptors = pd.DataFrame()
 
-    for protein_volsite in input_proteins:
-        protein_code = protein_volsite.split('/')[-1]
-        print(f'Calculating descriptors for {protein_code}...')
+    protein_path = f'1a28/protein_no_solvent.mol2'
+    ligand_path = f'1a28/ligand.mol2'
+    cavity_file, cavity_index, cavity_df = select_cavity("1a28", ligand_path)
+    cavity_path = f'1a28/{cavity_file}'
+    # Load the protein mol2 file
+    protein_df = load_mol_file(protein_path)
+    # Get residues exposed to the cavity
+    cavity_descriptors = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
+    cavity_descriptors.to_csv(output_csv)
 
-        protein_path = f'{protein_volsite}/protein_no_solvent.mol2'
-        ligand_path = f'{protein_volsite}/ligand.mol2'
-        # Select the cavity that covers the ligand
-        cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_path)
-        cavity_path = f'{protein_volsite}/{cavity_file}'
+    # for protein_volsite in input_proteins:
+    #     protein_code = protein_volsite.split('/')[-1]
+    #     print(f'Calculating descriptors for {protein_code}...')
+    #
+    #     protein_path = f'{protein_volsite}/protein_no_solvent.mol2'
+    #     ligand_path = f'{protein_volsite}/ligand.mol2'
+    #     # Select the cavity that covers the ligand
+    #     cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_path)
+    #     cavity_path = f'{protein_volsite}/{cavity_file}'
+    #
+    #     if cavity_df is not None and load_mol_file(protein_path) is not None:
+    #         print(f'Cavity size: {cavity_df.shape[0]}')
+    #         # Get the descriptors generated by Volsite
+    #         volsite_descriptors = get_volsite_descriptors(protein_volsite, cavity_index)
+    #
+    #         cavity_descriptors = pd.DataFrame(volsite_descriptors).transpose()
+    #         cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
+    #         cavity_descriptors.insert(0, "protein_code", protein_code)
+    #
+    #         # # Cavity X, Y, Z coordinates
+    #         # cavity_points_df = get_points(cavity_df)
+    #         # # Add cavity area to the df
+    #         # hull = convexhull(cavity_points_df)
+    #         # cavity_area = area(hull)
+    #         # cavity_descriptors = cavity_descriptors.assign(area=[cavity_area])
+    #         #
+    #         # # Add min & max distance to the center of the gravity & shell & the angle between those
+    #         # distance_to_closest_point, distance_to_furthest_point, angle_degrees = (
+    #         #     distances_angles_shell_center(cavity_points_df, hull))
+    #         # cavity_descriptors = cavity_descriptors.assign(min_dist=[distance_to_closest_point])
+    #         # cavity_descriptors = cavity_descriptors.assign(max_dist=[distance_to_furthest_point])
+    #         # cavity_descriptors = cavity_descriptors.assign(angle=[angle_degrees])
+    #         #
+    #         # # Add max dist between two cavity points to the descriptors df
+    #         # max_dist_pairs = max_dist_cavity_points(cavity_df)
+    #         # cavity_descriptors = pd.concat([cavity_descriptors, max_dist_pairs], axis=1)
+    #
+    #         # Add max area of a triangle formed by three cavity points
+    #         # max_area_triplets = max_triplet_area(cavity_df)
+    #         # cavity_descriptors = pd.concat([cavity_descriptors, max_area_triplets], axis=1)
+    #
+    #         # Load the protein mol2 file
+    #         protein_df = load_mol_file(protein_path)
+    #         # Get residues exposed to the cavity
+    #         exposed_aa = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
+    #         cavity_descriptors = pd.concat([cavity_descriptors, exposed_aa], axis=1)
+    #
+    #         # # Calculate shape ration descriptors
+    #         # sphere = sphericity(cavity_points_df)
+    #         # cubic_sphere = cubic_sphericity(cavity_points_df)
+    #         # cone_sphere = cone_sphericity(cavity_points_df)
+    #         # # Add shape ration descriptors to the df
+    #         # cavity_descriptors = cavity_descriptors.assign(sphere=[sphere])
+    #         # cavity_descriptors = cavity_descriptors.assign(cubic_sphere=[cubic_sphere])
+    #         # cavity_descriptors = cavity_descriptors.assign(cone_sphere=[cone_sphere])
+    #         #
+    #         # # Compute the smallest box
+    #         # smallest_box = find_obb(cavity_points_df)
+    #         # cavity_descriptors = cavity_descriptors.assign(box_x=[smallest_box.iloc[0]])
+    #         # cavity_descriptors = cavity_descriptors.assign(box_y=[smallest_box.iloc[1]])
+    #         # cavity_descriptors = cavity_descriptors.assign(box_z=[smallest_box.iloc[2]])
+    #
+    #         # # Make the plot and save it to a file in '04_figures' directory
+    #         # save_path = f'{protein_volsite}/cavity_plot.png'
+    #         # plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
+    #
+    #         # Add the descriptors of the current cavity to the general dataframe
+    #         if all_descriptors.empty:
+    #             all_descriptors = cavity_descriptors
+    #         else:
+    #             all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
+    #
+    #     else:
+    #         print('No cavity for this structure')
+    #         no_cavity = pd.DataFrame()
+    #         no_cavity = no_cavity.set_axis([0], axis=0)
+    #         no_cavity.insert(0, "protein_code", protein_code)
+    #         all_descriptors = pd.concat([all_descriptors, no_cavity.iloc[[-1]]], ignore_index=True)
+    #
+    #     print('Done')
+    #     print('-----------------------------------')
+    #     all_descriptors.to_csv(output_csv)
 
-        if cavity_df is not None and load_mol_file(protein_path) is not None:
-            print(f'Cavity size: {cavity_df.shape[0]}')
-            # Get the descriptors generated by Volsite
-            volsite_descriptors = get_volsite_descriptors(protein_volsite, cavity_index)
-
-            cavity_descriptors = pd.DataFrame(volsite_descriptors).transpose()
-            cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
-            cavity_descriptors.insert(0, "protein_code", protein_code)
-
-            # Cavity X, Y, Z coordinates
-            cavity_points_df = get_points(cavity_df)
-            # Add cavity area to the df
-            hull = convexhull(cavity_points_df)
-            cavity_area = area(hull)
-            cavity_descriptors = cavity_descriptors.assign(area=[cavity_area])
-
-            # Add min & max distance to the center of the gravity & shell & the angle between those
-            distance_to_closest_point, distance_to_furthest_point, angle_degrees = (
-                distances_angles_shell_center(cavity_points_df, hull))
-            cavity_descriptors = cavity_descriptors.assign(min_dist=[distance_to_closest_point])
-            cavity_descriptors = cavity_descriptors.assign(max_dist=[distance_to_furthest_point])
-            cavity_descriptors = cavity_descriptors.assign(angle=[angle_degrees])
-
-            # Add max dist between two cavity points to the descriptors df
-            max_dist_pairs = max_dist_cavity_points(cavity_df)
-            cavity_descriptors = pd.concat([cavity_descriptors, max_dist_pairs], axis=1)
-
-            # Add max area of a triangle formed by three cavity points
-            max_area_triplets = max_triplet_area(cavity_df)
-            cavity_descriptors = pd.concat([cavity_descriptors, max_area_triplets], axis=1)
-
-            # Load the protein mol2 file
-            protein_df = load_mol_file(protein_path)
-            # Get residues exposed to the cavity
-            exposed_aa = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
-            cavity_descriptors = pd.concat([cavity_descriptors, exposed_aa], axis=1)
-
-            # Calculate shape ration descriptors
-            sphere = sphericity(cavity_points_df)
-            cubic_sphere = cubic_sphericity(cavity_points_df)
-            cone_sphere = cone_sphericity(cavity_points_df)
-            # Add shape ration descriptors to the df
-            cavity_descriptors = cavity_descriptors.assign(sphere=[sphere])
-            cavity_descriptors = cavity_descriptors.assign(cubic_sphere=[cubic_sphere])
-            cavity_descriptors = cavity_descriptors.assign(cone_sphere=[cone_sphere])
-
-            # Compute the smallest box
-            smallest_box = find_obb(cavity_points_df)
-            cavity_descriptors = cavity_descriptors.assign(box_x=[smallest_box.iloc[0]])
-            cavity_descriptors = cavity_descriptors.assign(box_y=[smallest_box.iloc[1]])
-            cavity_descriptors = cavity_descriptors.assign(box_z=[smallest_box.iloc[2]])
-
-            # Make the plot and save it to a file in '04_figures' directory
-            save_path = f'{protein_volsite}/cavity_plot.png'
-            plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
-
-            # Add the descriptors of the current cavity to the general dataframe
-            if all_descriptors.empty:
-                all_descriptors = cavity_descriptors
-            else:
-                all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
-
-        else:
-            print('No cavity for this structure')
-            no_cavity = pd.DataFrame()
-            no_cavity = no_cavity.set_axis([0], axis=0)
-            no_cavity.insert(0, "protein_code", protein_code)
-            all_descriptors = pd.concat([all_descriptors, no_cavity.iloc[[-1]]], ignore_index=True)
-
-        print('Done')
-        print('-----------------------------------')
-        all_descriptors.to_csv(output_csv)
-
-    all_descriptors.to_csv(output_csv)
+    # all_descriptors.to_csv(output_csv)
     print('Calculation of descriptors for each structure is finished!')
