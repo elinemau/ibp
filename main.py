@@ -445,6 +445,10 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id):
 
     # Get coordinates of CA of the residue
     CA = residue[residue['atom_name'] == 'CA'][["x", "y", "z"]].values
+    # Fail-safe if there is no CA atom (non-residue substructures)
+    if len(CA) == 0:
+        return False, None
+
     CA_coords = pd.Series(CA[0], index=["x", "y", "z"])
 
     # Calculate the vector between the residue's side chain and the cavity's center of gravity
