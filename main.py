@@ -20,29 +20,32 @@ def load_mol2_file(filename):
         unsuccessful.
     """
 
-    # check if the file is not (almost) empty
-    f = open(filename, 'r')
-    data = f.read().strip()
-    if len(data) < 27:
+    # Context manager to automatically close the file
+    with open(filename, 'r') as file:
+        # Read all lines into a list
+        lines = file.readlines()
+
+    # Check if the file is not (almost) empty
+    if len(lines) == 0:
         return None
 
-    df = pd.DataFrame(columns=['atom_id', 'atom_name', 'x', 'y', 'z', 'atom_type', 'subst_id', 'subst_name', 'charge'])
-    with open(filename, "r") as file:
-        line = file.readline()
-        while not line.startswith("@<TRIPOS>ATOM"):
-            line = file.readline()
-        line = file.readline()
-        while not line.startswith("@<TRIPOS>BOND"):
-            data = line.strip().split()
-            # Convert 'x', 'y', and 'z' columns to float
-            data[2:5] = map(float, data[2:5])
-            df.loc[len(df)] = data
-            line = file.readline()
-    file.close()
-    df['x'] = df['x'].astype(float)
-    df['y'] = df['y'].astype(float)
-    df['z'] = df['z'].astype(float)
-    df['charge'] = df['charge'].astype(float)
+    # Find the index where "@<TRIPOS>ATOM" appears
+    atom_index = lines.index("@<TRIPOS>ATOM\n") + 1
+
+    # Extract relevant lines for DataFrame creation
+    atom_data = []
+    for line in lines[atom_index:]:
+        if line.startswith("@<TRIPOS>BOND"):
+            break
+        atom_data.append(line.strip().split())
+
+    # Create the DataFrame directly from the list of lists
+    df = pd.DataFrame(atom_data,
+                      columns=['atom_id', 'atom_name', 'x', 'y', 'z', 'atom_type', 'subst_id', 'subst_name', 'charge'])
+
+    # Convert specific columns to float
+    df[['x', 'y', 'z', 'charge']] = df[['x', 'y', 'z', 'charge']].astype(float)
+
     return df
 
 
