@@ -726,7 +726,7 @@ if __name__ == '__main__':
     for i, (protein_volsite, protein_df, ligand_df) in enumerate(load_structure_data(volsite_output)):
         # protein_code = protein_volsite.split('/')[-1]
         protein_code = protein_volsite.split('\\')[-1]
-        print(f'Calculating descriptors for {protein_volsite}...')
+        print(f'Calculating descriptors for {protein_code}...')
 
         # Select the cavity that covers the ligand
         cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_df)
@@ -843,7 +843,9 @@ if __name__ == '__main__':
         concatenated_df.to_csv(temp_csv_file, index=False)
 
     # Concatenate all temporary CSV files
-    all_csv_files = [os.path.join(temp_folder, f'{output_csv}_temp_{j}.csv') for j in range(temp_file_counter + 1)]
+    all_csv_files = [os.path.join(temp_folder, f'{output_csv}_temp_{j}.csv') for j in range(temp_file_counter)]
+    if temp_file_counter == 0:
+        all_csv_files = [f'{output_csv}_temp_{temp_file_counter}.csv']
     print(f'All CSV files: {all_csv_files}')
     concatenated_df = pd.concat([pd.read_csv(csv_file) for csv_file in all_csv_files], ignore_index=True)
     concatenated_df.to_csv(output_csv, index=False)
