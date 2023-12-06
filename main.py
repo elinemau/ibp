@@ -1,3 +1,5 @@
+import shutil
+
 import pandas as pd
 import numpy as np
 from itertools import combinations_with_replacement, product
@@ -19,6 +21,26 @@ def is_non_empty_file(file_path):
     :return: True if the file exists and is not empty, False otherwise.
     """
     return os.path.isfile(file_path) and os.path.getsize(file_path) > 0
+
+
+def load_structure_data(root_folder):
+    """
+    Generator function to lazily load structure data from folders.
+
+    :param root_folder: Path to the root folder containing structure folders.
+    :yield: Generator that produces (prot_df, lig_df) tuples.
+    """
+    # Iterate over subdirectories in the root folder
+    for structure_folder in list_subdirectories(root_folder):
+        # Construct paths for protein and ligand mol2 files
+        prot_path = os.path.join(structure_folder, 'protein_no_solvent.mol2')
+        lig_path = os.path.join(structure_folder, 'ligand.mol2')
+
+        # Load protein and ligand dataframes
+        prot_df = load_mol2_file(prot_path)
+        lig_df = load_mol2_file(lig_path)
+
+        yield structure_folder, prot_df, lig_df
 
 
 def load_mol2_file(filename):
@@ -686,33 +708,35 @@ if __name__ == '__main__':
     # Usage:
     # python3 main.py [volsite_output_folder] [descriptor_csv_file]
     volsite_output = argv[1]
-    input_proteins = list_subdirectories(volsite_output)
 
     output_csv = argv[2]
     if not output_csv.endswith('.csv'):
         output_csv = argv[2] + '.csv'
-    all_descriptors = pd.DataFrame()
 
-    for protein_volsite in input_proteins:
-        protein_code = protein_volsite.split('/')[-1]
-        print(f'Calculating descriptors for {protein_code}...')
+    temp_folder = 'temp_csv'
+    os.makedirs(temp_folder, exist_ok=True)
 
-        protein_path = f'{protein_volsite}/protein_no_solvent.mol2'
-        protein_df = load_mol2_file(protein_path)
+    # List to store individual DataFrames
+    all_descriptors_list = []
 
-        ligand_path = f'{protein_volsite}/ligand.mol2'
-        ligand_df = load_mol2_file(ligand_path)
+    # Counter for temporary file names
+    temp_file_counter = 0
+
+    # Iterate over protein structures using the generator
+    for i, (protein_volsite, protein_df, ligand_df) in enumerate(load_structure_data(volsite_output)):
+        # protein_code = protein_volsite.split('/')[-1]
+        protein_code = protein_volsite.split('\\')[-1]
+        print(f'Calculating descriptors for {protein_volsite}...')
 
         # Select the cavity that covers the ligand
         cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_df)
         cavity_path = f'{protein_volsite}/{cavity_file}'
 
-        if any(not is_non_empty_file(path) for path in [protein_path, ligand_path]):
-            print('There is something wrong with protein or cavity file.')
-            file_err = pd.DataFrame()
-            file_err = file_err.set_axis([0], axis=0)
-            file_err.insert(0, "protein_code", protein_code)
-            all_descriptors = pd.concat([all_descriptors, file_err.iloc[[-1]]], ignore_index=True)
+        if protein_df is None or ligand_df is None:
+            print('There is something wrong with protein or ligand file.')
+            cavity_descriptors = pd.DataFrame()
+            cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
+            cavity_descriptors.insert(0, "protein_code", protein_code)
 
         elif is_non_empty_file(cavity_path):
             print(f'Cavity size: {cavity_df.shape[0]}')
@@ -757,6 +781,7 @@ if __name__ == '__main__':
 
             # Get residues exposed to the cavity
             print('Calculating residues exposed to the cavity...', end=' ')
+            protein_path = f'{protein_volsite}/protein_no_solvent.mol2'
             exposed_aa = get_exposed_residues(protein_path, protein_df, cavity_path, cavity_df)
             cavity_descriptors = pd.concat([cavity_descriptors, exposed_aa], axis=1)
             print('Done')
@@ -782,22 +807,48 @@ if __name__ == '__main__':
             plot_cavity(cavity_points_df.to_numpy(), hull, save_path)
             print('Done')
 
-            # Add the descriptors of the current cavity to the general dataframe
-            if all_descriptors.empty:
-                all_descriptors = cavity_descriptors
-            else:
-                all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
-
         else:
             print('No cavity for this structure.')
-            no_cavity = pd.DataFrame()
-            no_cavity = no_cavity.set_axis([0], axis=0)
-            no_cavity.insert(0, "protein_code", protein_code)
-            all_descriptors = pd.concat([all_descriptors, no_cavity.iloc[[-1]]], ignore_index=True)
+            cavity_descriptors = pd.DataFrame()
+            cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
+            cavity_descriptors.insert(0, "protein_code", protein_code)
+
+        # Append the current DataFrame to the list
+        all_descriptors_list.append(cavity_descriptors)
 
         print(f'{protein_code} done')
         print('-----------------------------------')
-        all_descriptors.to_csv(output_csv)
 
-    all_descriptors.to_csv(output_csv)
+        # Concatenate and write to CSV every 10 iterations (including the last one)
+        if (i + 1) % 10 == 0:
+            # Concatenate DataFrames in the list
+            concatenated_df = pd.concat(all_descriptors_list, ignore_index=True)
+
+            # Write the concatenated DataFrame to a CSV file in the temp folder
+            temp_csv_file = os.path.join(temp_folder, f'{output_csv}_temp_{temp_file_counter}.csv')
+            print(f'Writing CSV file: {temp_csv_file}')
+            concatenated_df.to_csv(temp_csv_file, index=False)
+
+            # Clear the list to free up memory
+            all_descriptors_list = []
+
+            # Increment the temp file counter
+            temp_file_counter += 1
+
+    # Concatenate the remaining DataFrames
+    if all_descriptors_list:
+        concatenated_df = pd.concat(all_descriptors_list, ignore_index=True)
+        temp_csv_file = os.path.join(temp_folder, f'{output_csv}_temp_{temp_file_counter}.csv')
+        print(f'Writing CSV file: {temp_csv_file}')
+        concatenated_df.to_csv(temp_csv_file, index=False)
+
+    # Concatenate all temporary CSV files
+    all_csv_files = [os.path.join(temp_folder, f'{output_csv}_temp_{j}.csv') for j in range(temp_file_counter + 1)]
+    print(f'All CSV files: {all_csv_files}')
+    concatenated_df = pd.concat([pd.read_csv(csv_file) for csv_file in all_csv_files], ignore_index=True)
+    concatenated_df.to_csv(output_csv, index=False)
+
+    # Clean up: remove temporary CSV files and the temp folder
+    shutil.rmtree(temp_folder)
+
     print('Calculation of descriptors for each structure is finished!')
