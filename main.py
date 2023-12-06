@@ -11,6 +11,16 @@ from pymol import cmd
 from sys import argv
 
 
+def is_non_empty_file(file_path):
+    """
+    Check if a file exists and is not empty.
+
+    :param file_path: Path to the file.
+    :return: True if the file exists and is not empty, False otherwise.
+    """
+    return os.path.isfile(file_path) and os.path.getsize(file_path) > 0
+
+
 def load_mol2_file(filename):
     """
     Loads the descriptors for a given cavity returned by Volsite into a pandas DataFrame.
@@ -20,33 +30,33 @@ def load_mol2_file(filename):
         unsuccessful.
     """
 
-    # Context manager to automatically close the file
-    with open(filename, 'r') as file:
-        # Read all lines into a list
-        lines = file.readlines()
+    # Check if the file exists and if it's not empty
+    if is_non_empty_file(filename):
+        # Context manager to automatically close the file
+        with open(filename, 'r') as file:
+            # Read all lines into a list
+            lines = file.readlines()
 
-    # Check if the file is not (almost) empty
-    if len(lines) == 0:
-        return None
+        # Find the index where "@<TRIPOS>ATOM" appears
+        atom_index = lines.index("@<TRIPOS>ATOM\n") + 1
 
-    # Find the index where "@<TRIPOS>ATOM" appears
-    atom_index = lines.index("@<TRIPOS>ATOM\n") + 1
+        # Extract relevant lines for DataFrame creation
+        atom_data = []
+        for line in lines[atom_index:]:
+            if line.startswith("@<TRIPOS>BOND"):
+                break
+            atom_data.append(line.strip().split())
 
-    # Extract relevant lines for DataFrame creation
-    atom_data = []
-    for line in lines[atom_index:]:
-        if line.startswith("@<TRIPOS>BOND"):
-            break
-        atom_data.append(line.strip().split())
+        # Create the DataFrame directly from the list of lists
+        df = pd.DataFrame(atom_data,
+                          columns=['atom_id', 'atom_name', 'x', 'y', 'z', 'atom_type', 'subst_id', 'subst_name', 'charge'])
 
-    # Create the DataFrame directly from the list of lists
-    df = pd.DataFrame(atom_data,
-                      columns=['atom_id', 'atom_name', 'x', 'y', 'z', 'atom_type', 'subst_id', 'subst_name', 'charge'])
+        # Convert specific columns to float
+        df[['x', 'y', 'z', 'charge']] = df[['x', 'y', 'z', 'charge']].astype(float)
 
-    # Convert specific columns to float
-    df[['x', 'y', 'z', 'charge']] = df[['x', 'y', 'z', 'charge']].astype(float)
-
-    return df
+        return df
+    else:
+        print(f'Given filename {filename} does not exist or is empty!')
 
 
 def get_points(df):
@@ -85,13 +95,13 @@ def calculate_nearest_point(df_points, reference_point):
     return dist.index(min(dist))
 
 
-def select_cavity(folder, ligand_file_path):
+def select_cavity(folder, lig_df):
     """
     Investigates all cavities found with Volsite (with ligand restriction) and selects the one closest
     to the center of gravity of the ligand.
 
     :param folder: folder with Volsite output
-    :param ligand_file_path: path to the ligand file
+    :param lig_df: path to the ligand file
     :return: dataframe of the cavity closest to the ligand
     """
 
@@ -113,10 +123,9 @@ def select_cavity(folder, ligand_file_path):
             files.append(file)
         else:
             continue
-    # get df from file
-    df_ligand = load_mol2_file(ligand_file_path)
-    # calculate center of gravity
-    protein_center = center_of_gravity(get_points(df_ligand))
+
+    # calculate center of gravity of the ligand
+    protein_center = center_of_gravity(get_points(lig_df))
 
     # check if there are any cavities found by Volsite
     if len(cavities) > 0:
@@ -135,25 +144,37 @@ def get_volsite_descriptors(volsite_folder, cavity_ind):
     :param cavity_ind: index of the selected cavity (the one closer to the ligand)
     :return: dataframe with volsite descriptors for a given cavity
     """
-    # get the volsite descriptor file
+    # Get the volsite descriptor file
     volsite_files = os.listdir(volsite_folder)
     filename = ""
     for file in volsite_files:
         if file.endswith('descriptor.txt'):
             filename = file
             break
-    # add a failsafe for the incorrect cavity_num later!!!
-    points = ['CZ', 'CA', 'O', 'OD1', 'OG', 'N', 'NZ', 'DU']
-    column_names = ['volume'] + points
-    for point in points:
-        column_names += [f'{point}_below_40', f'{point}_between_40_50', f'{point}_between_50_60',
-                         f'{point}_between_60_70', f'{point}_between_70_80', f'{point}_between_80_90',
-                         f'{point}_between_90_100', f'{point}_between_100_110', f'{point}_between_110_120',
-                         f'{point}_120']
-    column_names += ['name']
-    df = pd.read_csv(f'{volsite_folder}/{filename}', sep=" ", index_col=False, header=None, names=column_names)
-    descriptors = df.loc[cavity_ind, df.columns != 'name']
-    return descriptors
+
+    volsite_descr_file = f'{volsite_folder}/{filename}'
+    if is_non_empty_file(volsite_descr_file):
+        # Headers for the df
+        points = ['CZ', 'CA', 'O', 'OD1', 'OG', 'N', 'NZ', 'DU']
+        column_names = ['volume'] + points
+        for point in points:
+            column_names += [f'{point}_below_40', f'{point}_between_40_50', f'{point}_between_50_60',
+                             f'{point}_between_60_70', f'{point}_between_70_80', f'{point}_between_80_90',
+                             f'{point}_between_90_100', f'{point}_between_100_110', f'{point}_between_110_120',
+                             f'{point}_120']
+        column_names += ['name']
+
+        # Create df for the descriptors
+        df = pd.read_csv(volsite_descr_file, sep=" ", index_col=False, header=None, names=column_names)
+
+        if cavity_ind in df.index:
+            descriptors = df.loc[cavity_ind, df.columns != 'name']
+            return descriptors
+        else:
+            print("Incorrect cavity index!")
+            return None
+    else:
+        return None
 
 
 def max_dist_cavity_points(pharmacophore):
@@ -497,61 +518,66 @@ def get_exposed_residues(prot_file, protein, cav_file, cavity, distance_threshol
 
     :return: DataFrame, A DataFrame containing information about exposed residues.
     """
-    # Get the residues that surround the cavity
-    neighboring_residues = find_neighboring_residues(prot_file, cav_file, distance_threshold=distance_threshold)
+    # Check if protein & cavity file exist and are not empty
+    if is_non_empty_file(prot_file) and is_non_empty_file(cav_file):
+        # Get the residues that surround the cavity
+        neighboring_residues = find_neighboring_residues(prot_file, cav_file, distance_threshold=distance_threshold)
 
-    exposed_backbone = 0
-    exposed_side_chain = 0
-    polar_side_chain = 0
-    aromatic_side_chain = 0
-    pos_side_chain = 0
-    neg_side_chain = 0
-    hydrophobic_side_chain = 0
+        exposed_backbone = 0
+        exposed_side_chain = 0
+        polar_side_chain = 0
+        aromatic_side_chain = 0
+        pos_side_chain = 0
+        neg_side_chain = 0
+        hydrophobic_side_chain = 0
 
-    # Check each residue
-    for residue in neighboring_residues:
-        result, exposed_part = is_residue_exposed_to_cavity(protein, cavity, residue)
-        if exposed_part == 'backbone':
-            exposed_backbone += 1
-        elif exposed_part == 'side_chain':
-            exposed_side_chain += 1
-            resn = protein['subst_name'][protein['subst_id'] == residue].values[0]
-            # Check if the side chain is polar
-            if resn in ['SER', 'THR', 'CYS', 'PRO', 'ASN', 'GLN']:
-                polar_side_chain += 1
-            # Check if the side chain is aromatic
-            if resn in ['PHE', 'TRP', 'TYR']:
-                aromatic_side_chain += 1
-            # Check if the side chain is positive
-            if resn in ['LYS', 'ARG', 'HIS']:
-                pos_side_chain += 1
-            # Check if the side chain is negative
-            if resn in ['ASP', 'GLU']:
-                neg_side_chain += 1
-            # Check if the side chain is hydrophobic
-            if resn in ['GLY', 'PRO', 'PHE', 'ALA', 'ILE', 'LEU', 'VAL']:
-                hydrophobic_side_chain += 1
+        # Check each residue
+        for residue in neighboring_residues:
+            result, exposed_part = is_residue_exposed_to_cavity(protein, cavity, residue)
+            if exposed_part == 'backbone':
+                exposed_backbone += 1
+            elif exposed_part == 'side_chain':
+                exposed_side_chain += 1
+                resn = protein['subst_name'][protein['subst_id'] == residue].values[0]
+                # Check if the side chain is polar
+                if resn in ['SER', 'THR', 'CYS', 'PRO', 'ASN', 'GLN']:
+                    polar_side_chain += 1
+                # Check if the side chain is aromatic
+                if resn in ['PHE', 'TRP', 'TYR']:
+                    aromatic_side_chain += 1
+                # Check if the side chain is positive
+                if resn in ['LYS', 'ARG', 'HIS']:
+                    pos_side_chain += 1
+                # Check if the side chain is negative
+                if resn in ['ASP', 'GLU']:
+                    neg_side_chain += 1
+                # Check if the side chain is hydrophobic
+                if resn in ['GLY', 'PRO', 'PHE', 'ALA', 'ILE', 'LEU', 'VAL']:
+                    hydrophobic_side_chain += 1
 
-    all_exposed = exposed_backbone + exposed_side_chain
+        all_exposed = exposed_backbone + exposed_side_chain
 
-    exposed_residues = {'exposed_residues': all_exposed,
-                        'exposed_backbone_ratio_all': float(exposed_backbone / all_exposed) if all_exposed > 0 else 0.0,
-                        'exposed_side_chain_ratio_all': float(exposed_side_chain /
-                                                              all_exposed) if all_exposed > 0 else 0.0,
-                        'exposed_polar_side_ratio': float(polar_side_chain /
-                                                          exposed_side_chain) if exposed_side_chain > 0 else 0.0,
-                        'exposed_aromatic_side_ratio': float(aromatic_side_chain /
-                                                             exposed_side_chain) if exposed_side_chain > 0 else 0.0,
-                        'exposed_pos_side_ratio': float(pos_side_chain /
-                                                        exposed_side_chain) if exposed_side_chain > 0 else 0.0,
-                        'exposed_neg_side_ratio': float(neg_side_chain /
-                                                        exposed_side_chain) if exposed_side_chain > 0 else 0.0,
-                        'exposed_hydrophobic_side_ratio': float(hydrophobic_side_chain /
-                                                                exposed_side_chain) if exposed_side_chain > 0 else 0.0
-                        }
+        exposed_residues = {'exposed_residues': all_exposed,
+                            'exposed_backbone_ratio_all': float(exposed_backbone / all_exposed) if all_exposed > 0 else 0.0,
+                            'exposed_side_chain_ratio_all': float(exposed_side_chain /
+                                                                  all_exposed) if all_exposed > 0 else 0.0,
+                            'exposed_polar_side_ratio': float(polar_side_chain /
+                                                              exposed_side_chain) if exposed_side_chain > 0 else 0.0,
+                            'exposed_aromatic_side_ratio': float(aromatic_side_chain /
+                                                                 exposed_side_chain) if exposed_side_chain > 0 else 0.0,
+                            'exposed_pos_side_ratio': float(pos_side_chain /
+                                                            exposed_side_chain) if exposed_side_chain > 0 else 0.0,
+                            'exposed_neg_side_ratio': float(neg_side_chain /
+                                                            exposed_side_chain) if exposed_side_chain > 0 else 0.0,
+                            'exposed_hydrophobic_side_ratio': float(hydrophobic_side_chain /
+                                                                    exposed_side_chain) if exposed_side_chain > 0 else 0.0
+                            }
 
-    df_exposed = pd.DataFrame(exposed_residues, index=[0])
-    return df_exposed
+        df_exposed = pd.DataFrame(exposed_residues, index=[0])
+        return df_exposed
+    else:
+        print("Something is wrong with the protein or cavity file (does not exist or is empty)!", end=' ')
+        return None
 
 
 def sphericity(cavity_points):
@@ -675,20 +701,31 @@ if __name__ == '__main__':
         protein_df = load_mol2_file(protein_path)
 
         ligand_path = f'{protein_volsite}/ligand.mol2'
+        ligand_df = load_mol2_file(ligand_path)
 
         # Select the cavity that covers the ligand
-        cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_path)
+        cavity_file, cavity_index, cavity_df = select_cavity(protein_volsite, ligand_df)
         cavity_path = f'{protein_volsite}/{cavity_file}'
 
-        if cavity_df is not None and load_mol2_file(protein_path) is not None:
+        if any(not is_non_empty_file(path) for path in [protein_path, ligand_path]):
+            print('There is something wrong with protein or cavity file.')
+            file_err = pd.DataFrame()
+            file_err = file_err.set_axis([0], axis=0)
+            file_err.insert(0, "protein_code", protein_code)
+            all_descriptors = pd.concat([all_descriptors, file_err.iloc[[-1]]], ignore_index=True)
+
+        elif is_non_empty_file(cavity_path):
             print(f'Cavity size: {cavity_df.shape[0]}')
 
             # Get descriptors generated by Volsite
             print('Retrieving descriptors calculated by Volsite...', end=' ')
             volsite_descriptors = get_volsite_descriptors(protein_volsite, cavity_index)
-            cavity_descriptors = pd.DataFrame(volsite_descriptors).transpose()
-            cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
-            cavity_descriptors.insert(0, "protein_code", protein_code)
+            if volsite_descriptors is not None:
+                cavity_descriptors = pd.DataFrame(volsite_descriptors).transpose()
+                cavity_descriptors = cavity_descriptors.set_axis([0], axis=0)
+                cavity_descriptors.insert(0, "protein_code", protein_code)
+            else:
+                cavity_descriptors = pd.DataFrame()
             print('Done')
 
             # Cavity X, Y, Z coordinates
@@ -713,8 +750,9 @@ if __name__ == '__main__':
             # Add max dist between two cavity points to the descriptors df
             print('Calculating max distance between pharmacophore points...', end=' ')
             pharmacophore_df = load_mol2_file(f'{protein_volsite}/Pharmacophore.mol2')
-            max_dist_pairs = max_dist_cavity_points(pharmacophore_df)
-            cavity_descriptors = pd.concat([cavity_descriptors, max_dist_pairs], axis=1)
+            if pharmacophore_df is not None:
+                max_dist_pairs = max_dist_cavity_points(pharmacophore_df)
+                cavity_descriptors = pd.concat([cavity_descriptors, max_dist_pairs], axis=1)
             print('Done')
 
             # Get residues exposed to the cavity
@@ -751,7 +789,7 @@ if __name__ == '__main__':
                 all_descriptors = pd.concat([all_descriptors, cavity_descriptors.iloc[[-1]]], ignore_index=True)
 
         else:
-            print('No cavity for this structure')
+            print('No cavity for this structure.')
             no_cavity = pd.DataFrame()
             no_cavity = no_cavity.set_axis([0], axis=0)
             no_cavity.insert(0, "protein_code", protein_code)
