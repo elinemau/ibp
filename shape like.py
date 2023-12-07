@@ -46,7 +46,7 @@ def center_of_gravity(points):
     return points.mean()
 
 
-def sphericity(points):
+def sphericity(points, elev_init=20, azim_init=30):
     points = points.to_numpy()
     # Calculate the convex hull
     hull = ConvexHull(points)
@@ -63,10 +63,8 @@ def sphericity(points):
     # make fig to plot  mesh
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    mesh = Poly3DCollection([points[s] for s in hull.simplices], alpha=0.1, edgecolor='k', facecolors="cornflowerblue")
-    ax.add_collection3d(mesh)
     # Plot the sphere
-    phi, theta = np.mgrid[0.0:2.0 * np.pi:25j, 0.0:np.pi:15j]
+    phi, theta = np.mgrid[0.0:2.0 * np.pi:20j, 0.0:np.pi:10j]
     x = sphere_radius * np.sin(theta) * np.cos(phi)
     y = sphere_radius * np.sin(theta) * np.sin(phi)
     z = sphere_radius * np.cos(theta)
@@ -74,13 +72,33 @@ def sphericity(points):
     sphere_points = np.column_stack([x.flatten(), y.flatten(), z.flatten()])
     sphere_hull = ConvexHull(sphere_points)
     # Plot the convex hull mesh for the sphere
-    sphere_mesh = Poly3DCollection([sphere_points[s] for s in sphere_hull.simplices], alpha=0.1, edgecolor='gray',
-                                   facecolors='grey')
+    sphere_mesh = Poly3DCollection([sphere_points[s] for s in sphere_hull.simplices], alpha=0.05, edgecolor='gray',
+                                   facecolors='white')
     ax.add_collection3d(sphere_mesh)
+    mesh = Poly3DCollection([points[s] for s in hull.simplices], alpha=0.2, edgecolor='lightsteelblue',
+                            facecolors="cornflowerblue")
+    ax.add_collection3d(mesh)
     ax.set_ylim(-6,6)
     ax.set_xlim(-6,6)
     ax.set_zlim(-6,6)
     ax.grid(False)
+    ax.axis('off')
+    ax.set_facecolor('none')
+    ax.view_init(elev=20, azim=30)
+
+    def update_view(elev, azim):
+        ax.view_init(elev=elev_init, azim=azim_init)
+        plt.draw()
+
+    # Create an interactive slider for elevation angle
+    elev_slider = plt.Slider(ax=plt.axes([0.1, 0.01, 0.65, 0.03]), label='Elevation', valmin=0, valmax=90,
+                             valinit=elev_init)
+    elev_slider.on_changed(lambda elev: update_view(elev, azim_slider.val))
+
+    # Create an interactive slider for azimuthal angle
+    azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
+                             valinit=azim_init)
+    azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
     plt.savefig('sphere_shape.svg', format='svg', transparent=True)
     plt.show()
 
@@ -104,7 +122,8 @@ def find_obb(points):
 
     return principal_axes, centroid
 
-def plot_obb(points, principal_axes, centroid):
+
+def plot_obb(points, principal_axes, centroid, elev_init=20, azim_init=30):
     # Create a 3D plot
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -137,20 +156,37 @@ def plot_obb(points, principal_axes, centroid):
            [box_vertices[i] for i in [0, 1, 5, 4]],
            [box_vertices[i] for i in [2, 3, 7, 6]]]
 
-    ax.add_collection3d(Poly3DCollection(box, facecolors='cornflowerblue', linewidths=1, edgecolors='k', alpha=.25))
+    ax.add_collection3d(Poly3DCollection(box, facecolors='cornflowerblue', linewidths=1, edgecolors='lightsteelblue', alpha=.25))
+    ax.view_init(elev=20, azim=30)
+
+    def update_view(elev, azim):
+        ax.view_init(elev=elev_init, azim=azim_init)
+        plt.draw()
+
+    # Create an interactive slider for elevation angle
+    elev_slider = plt.Slider(ax=plt.axes([0.1, 0.01, 0.65, 0.03]), label='Elevation', valmin=0, valmax=90,
+                             valinit=elev_init)
+    elev_slider.on_changed(lambda elev: update_view(elev, azim_slider.val))
+
+    # Create an interactive slider for azimuthal angle
+    azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
+                             valinit=azim_init)
+    azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
     plt.savefig('smallest_box.svg', format='svg', transparent=True)
     ax.grid(False)
+    ax.axis('off')
+    ax.set_facecolor('none')
     plt.show()
 
 
 if __name__ == '__main__':
-    cavity_file = load_mol_file("1a28\\volsite\\CAVITY_N1_ALL.mol2")
+    cavity_file = load_mol_file("1a28\\1a28\\CAVITY_N1_ALL.mol2")
     cavity_points = get_points(cavity_file)
     cavity_center = center_of_gravity(cavity_points)
     centered_points = center_points(cavity_points)
-    sphere = sphericity(centered_points)
+    #sphere = sphericity(centered_points)
     principal_axes, centroid = find_obb(centered_points)
-    #plot_obb(centered_points, principal_axes, centroid)
+    plot_obb(centered_points, principal_axes, centroid)
     #Calculate the extent along each principal axis
     #extent = np.max(centered_points.dot(principal_axes.T), axis=0) - np.min(centered_points.dot(principal_axes.T),axis=0)
     #extent vector contains length, width and hight of the smallest oriented bounding box

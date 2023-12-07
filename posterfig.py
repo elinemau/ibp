@@ -15,6 +15,11 @@ def get_points(df):
     return df[["x", "y", "z"]]
 
 
+def center_points(points):
+    means = points.mean()
+    return points-means
+
+
 def load_mol_file(filename):
     """
     Loads the descriptors for a given cavity returned by Volsite into a pandas DataFrame.
@@ -110,23 +115,23 @@ def distances_angles_shell_center(cavity_points, hull):
     return distance_to_closest_point, distance_to_furthest_point, angle_degrees
 
 
-def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0):
+def find_neighboring_residues(prot_file, cav_file, distance_threshold=4.0):
     """
     Identify and retrieve the residue indices of atoms within a specified distance threshold from a cavity within a
     protein structure.
 
-    :param protein_file: str, The file path to the protein structure in a format compatible with PyMOL.
-    :param cavity_file: str, The file path to the cavity structure in a format compatible with PyMOL.
+    :param prot_file: str, The file path to the protein structure in a format compatible with PyMOL.
+    :param cav_file: str, The file path to the cavity structure in a format compatible with PyMOL.
     :param distance_threshold: float, optional, The distance threshold (in angstroms) used to filter atoms within the
         cavity. Defaults to 4.0 angstroms.
 
     :return: set, A set containing the residue indices of atoms within the specified distance threshold from the cavity.
     """
     # Load ligand and protein in PyMOL
-    cmd.load(protein_file)
-    cmd.load(cavity_file)
+    cmd.load(prot_file)
+    cmd.load(cav_file)
 
-    cavity_obj = cavity_file.split('/')[-1].split('.')[0]
+    cavity_obj = cav_file.split('/')[-1].split('.')[0]
 
     # Select the object by name
     selection_name = 'cavity_atoms'
@@ -137,81 +142,66 @@ def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0)
 
     # Print the residue numbers in the modified selection
     model = cmd.get_model(selection_name)
-
-    #next code is to see the model, we output it to an excel file
-    """data = {'Atom': [], 'Residue': [], 'Chain': [], 'X': [], 'Y': [], 'Z': []}
-    # Extract atom information from the model and populate the DataFrame
-    for atom in model.atom:
-        data['Atom'].append(atom.name)
-        data['Residue'].append(atom.resi)
-        data['Chain'].append(atom.chain)
-        data['X'].append(atom.coord[0])
-        data['Y'].append(atom.coord[1])
-        data['Z'].append(atom.coord[2])
-
-    df= pd.DataFrame(data)
-    df.to_excel('output.xlsx', index=False)"""
-
-    #back to original code
-    #residues are the aminoacids, every atom belongs to a residue and a residue has multiple atoms
     res_lim = model.get_residues()
 
     atom_list = model.atom
     resid_indices = set()
 
     for start, end in res_lim:  # extract the data we are interested in
-        #with start, end, we can select all atoms in one residue. start is the startatom of the residue and end is the end atom of that residue
         for atom in atom_list[start:end]:
             resid_indices.add(atom.resi)
 
-    #returns set of residues present around cavity
+    cmd.reinitialize()
     return resid_indices
 
-def is_residue_exposed_to_cavity(protein, cavity, residue_id):
+
+def is_residue_exposed_to_cavity(prot, cav, residue_id, elev_init=20, azim_init=30):
     """
     Determine whether a residue is exposed to a cavity in a protein structure based on the cosine of angles.
 
-    :param protein: DataFrame, The protein structure data containing information about atoms.
-    :param cavity: DataFrame, The cavity structure data containing information about atoms.
+    :param prot: DataFrame, The protein structure data containing information about atoms.
+    :param cav: DataFrame, The cavity structure data containing information about atoms.
     :param residue_id: int, The identifier of the residue to be checked for exposure.
 
     :return: tuple (bool, str or None), A tuple indicating whether the residue is exposed and, if so, whether it is the
         'side_chain' or 'backbone'.
     """
-    cavity_points = get_points(cavity)
-    cavity_center = center_of_gravity(cavity_points)
-
-    residue = protein[protein['subst_id'] == residue_id]
-
+    cav_points = get_points(cav)
+    cav_center = center_of_gravity(cav_points)
+    # Extract numeric part from subst_name
+    res = prot[prot['subst_id'] == residue_id]
     # Calculate the vector between the residue's backbone (N, CA, C) and the cavity's center of gravity
     backbone_atoms = ['N', 'CA', 'C', 'O']
-    backbone = pd.concat([residue[residue['atom_name'] == atom] for atom in backbone_atoms], ignore_index=True)
+    backbone = pd.concat([res[res['atom_name'] == atom] for atom in backbone_atoms], ignore_index=True)
     backbone_center = center_of_gravity(get_points(backbone))
+    #print(backbone_center)
 
     # Get coordinates of CA of the residue
-    CA = residue[residue['atom_name'] == 'CA'][["x", "y", "z"]].values
+    CA = res[res['atom_name'] == 'CA'][["x", "y", "z"]].values
     # Fail-safe if there is no CA atom (non-residue substructures)
     if len(CA) == 0:
         return False, None
 
     CA_coords = pd.Series(CA[0], index=["x", "y", "z"])
+    #print(CA_coords)
 
     # Calculate the vector between the residue's side chain and the cavity's center of gravity
-    side_chain_atoms = np.setdiff1d(np.unique(protein[['atom_name']].values), backbone_atoms)
-    side_chain = pd.concat([residue[residue['atom_name'] == atom] for atom in side_chain_atoms], ignore_index=True)
+    side_chain_atoms = np.setdiff1d(np.unique(prot[['atom_name']].values), backbone_atoms)
+    side_chain = pd.concat([res[res['atom_name'] == atom] for atom in side_chain_atoms], ignore_index=True)
     side_chain_center = center_of_gravity(get_points(side_chain))
 
     backbone_side_chain_vector = np.array(side_chain_center - CA_coords)
-    residue_cavity_vector = np.array(cavity_center - CA_coords)
+    #print(backbone_side_chain_vector)
+    residue_cavity_vector = np.array(cav_center - CA_coords)
     cosine_angle = np.dot(backbone_side_chain_vector, residue_cavity_vector) / (
             np.linalg.norm(backbone_side_chain_vector) * np.linalg.norm(residue_cavity_vector))
 
     # Add min & max distance to the center of the gravity & shell & the angle between those
-    convex_hull = ConvexHull(cavity_points)
+    convex_hull = ConvexHull(cav_points)
     dist_to_closest_point, dist_to_furthest_point, angle_deg = (
-        distances_angles_shell_center(cavity_points, convex_hull))
+        distances_angles_shell_center(cav_points, convex_hull))
 
-    backbone_cavity_dist = np.linalg.norm(backbone_center - cavity_center)
+    backbone_cavity_dist = np.linalg.norm(backbone_center - cav_center)
 
     sphere_dist = math.sqrt(dist_to_furthest_point**2 + backbone_cavity_dist**2)
 
@@ -219,22 +209,44 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id):
             2 * backbone_cavity_dist * sphere_dist)
 
     # get residue points
-    residue_points = residue[["x", "y", "z"]].to_numpy()
+    residue_points = res[["x", "y", "z"]].to_numpy()
     # make fig to plot  mesh
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    cavity_mesh = Poly3DCollection([cavity_points[s] for s in convex_hull.simplices], alpha=0.25, edgecolor='k')
-    ax.add_collection3d(cavity_mesh)
-    ax.scatter(residue_points[:, 0], residue_points[:, 1], residue_points[:, 2], c='r', marker='o',
-               label='residue points')
     ax.quiver(CA_coords[0], CA_coords[1], CA_coords[2], backbone_side_chain_vector[0],
-              backbone_side_chain_vector[1], backbone_side_chain_vector[2], label='backbone_direction_vector')
-    ax.quiver(side_chain_center[0], side_chain_center[1], side_chain_center[2], side_chain_direction_vector[0],
-              side_chain_direction_vector[1], side_chain_direction_vector[2])
-    ax.set_xlim([18, 28])
-    ax.set_ylim([5, 20])
-    ax.set_zlim([45, 65])
-    plt.show()
+              backbone_side_chain_vector[1], backbone_side_chain_vector[2])
+    ax.quiver(CA_coords[0], CA_coords[1], CA_coords[2], residue_cavity_vector[0],
+              residue_cavity_vector[1], residue_cavity_vector[2])
+    ax.scatter(residue_points[:, 0], residue_points[:, 1], residue_points[:, 2], c='lightsalmon', marker='o',
+               label='residue points')
+    cavity_mesh = Poly3DCollection([cav_points.iloc[s] for s in convex_hull.simplices], facecolors='cornflowerblue', linewidths=1, edgecolors='lightsteelblue', alpha=.2)
+    ax.add_collection3d(cavity_mesh)
+
+
+    ax.set_xlim([25, 45])
+    ax.set_ylim([25, 40])
+    ax.set_zlim([40, 50])
+    ax.grid(False)
+    ax.axis('off')
+    ax.set_facecolor('none')
+    ax.view_init(elev=20, azim=30)
+
+    def update_view(elev, azim):
+        ax.view_init(elev=elev_init, azim=azim_init)
+        plt.draw()
+
+    # Create an interactive slider for elevation angle
+    elev_slider = plt.Slider(ax=plt.axes([0.1, 0.01, 0.65, 0.03]), label='Elevation', valmin=0, valmax=90,
+                             valinit=elev_init)
+    elev_slider.on_changed(lambda elev: update_view(elev, azim_slider.val))
+
+    # Create an interactive slider for azimuthal angle
+    azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
+                             valinit=azim_init)
+    azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
+    plt.savefig('vector_method.svg', format='svg', transparent=True)
+    plt.show(block=True)
+
 
     if threshold <= cosine_angle <= 1:
         return True, 'side_chain'
@@ -245,14 +257,14 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id):
 
 
 
-protein_file = "1a28\\protein.mol2"
-cavity_file = "1a28/volsite/CAVITY_N1_ALL.mol2"
+protein_file = "1a28/1a28/protein_no_solvent.mol2"
+cavity_file = "1a28/1a28/CAVITY_N1_ALL.mol2"
 residues = find_neighboring_residues(protein_file, cavity_file)
 protein_df = load_mol_file(protein_file)
 cavity_df = load_mol_file(cavity_file)
 for i in residues:
-    if i == "894":
-        print(is_residue_exposed_to_cavity(protein_df, cavity_df,i , dot_product_threshold=0.0))
+    if i == "287":
+        print(is_residue_exposed_to_cavity(protein_df, cavity_df,i))
     else:
         continue
-#'887', '715', '890', '891', '801', '909', '903', '722', '719', '894', '718', '725', '905', '794', '778', '721', '797', '760', '766', '759', '763', '755', '756'
+#'287', '324', '290', '456', '294', '288', '291', '460', '363', '325', '332', '335', '347', '328', '284', '370', '472', '366', '329', '474', '459', '463'
