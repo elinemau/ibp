@@ -4,6 +4,7 @@ import numpy as np
 from scipy.spatial import ConvexHull
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import math
 
 def get_points(df):
     """
@@ -57,6 +58,56 @@ def center_of_gravity(points):
     """
     # Calculate the center of gravity of the structure
     return points.mean()
+
+
+def distances_angles_shell_center(cavity_points, hull):
+    """
+    Computes the longest and shortest distance from the center to the surface of a cavity, along with the angle between them.
+
+    :param cavity_points: pandas.DataFrame containing points representing the cavity, obtained from a cavity.mol2 file and def get_points()
+    :param hull: scipy.spatial.ConvexHull: Convex hull object representing the surface of the cavity.
+    :return: tuple: containing the shortest distance, longest distance, and angle between center and surface.
+    """
+
+    # compute euclidean distances from center to all points
+    cavity_np = cavity_points.to_numpy()
+    # find center
+    center = center_of_gravity(cavity_points).to_numpy()
+    boundary_points = cavity_np[hull.vertices]
+
+    # compute distences between center and boundary points
+    distances = np.linalg.norm(boundary_points - center, axis=1)
+
+    # find the indices of the furthest and closest point
+    furthest_point_index = np.argmax(distances)
+    closest_point_index = np.argmin(distances)
+
+    # get coordinates of the furthest and closest point
+    furthest_point = boundary_points[furthest_point_index]
+    closest_point = boundary_points[closest_point_index]
+
+    # calculate distance to the furthest and closest points
+    distance_to_furthest_point = distances[furthest_point_index]
+    distance_to_closest_point = distances[closest_point_index]
+
+    # calculate angle between the two
+    # Calculate the vectors from the center to the closest and furthest points
+    closest_point_vector = closest_point - center
+    furthest_point_vector = furthest_point - center
+
+    # Calculate the dot product between the two vectors
+    dot_product = np.dot(closest_point_vector, furthest_point_vector)
+
+    # Calculate the magnitudes (lengths) of the vectors
+    closest_point_magnitude = np.linalg.norm(closest_point_vector)
+    furthest_point_magnitude = np.linalg.norm(furthest_point_vector)
+    # Calculate the angle in radians using the dot product and magnitudes
+    angle_radians = np.arccos(dot_product / (closest_point_magnitude * furthest_point_magnitude))
+
+    # Convert the angle from radians to degrees
+    angle_degrees = np.degrees(angle_radians)
+
+    return distance_to_closest_point, distance_to_furthest_point, angle_degrees
 
 
 def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0):
@@ -117,79 +168,81 @@ def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0)
     return resid_indices
 
 
-def is_residue_exposed_to_cavity(protein, cavity, residue_id, dot_product_threshold=0.0):
+def is_residue_exposed_to_cavity(protein, cavity, residue_id):
     """
     Determine whether a residue is exposed to a cavity in a protein structure based on the cosine of angles.
 
     :param protein: DataFrame, The protein structure data containing information about atoms.
     :param cavity: DataFrame, The cavity structure data containing information about atoms.
     :param residue_id: int, The identifier of the residue to be checked for exposure.
-    :param dot_product_threshold: float, optional, The threshold for the cosine of angles to consider a residue exposed.
-                                Defaults to 0.0.
 
     :return: tuple (bool, str or None), A tuple indicating whether the residue is exposed and, if so, whether it is the
         'side_chain' or 'backbone'.
     """
-    cavity_center = center_of_gravity(get_points(cavity))
+    cavity_points = get_points(cavity)
+    cavity_center = center_of_gravity(cavity_points)
 
-    #extract all information about the specific residue in the protein dataframe
-    residue = protein[protein['subst_name'].str.endswith(str(residue_id))]
+    print(residue_id)
+    residue = protein[protein['subst_id'] == residue_id]
+    # residue_center = center_of_gravity(get_points(residue))
 
     # Calculate the vector between the residue's backbone (N, CA, C) and the cavity's center of gravity
     backbone_atoms = ['N', 'CA', 'C', 'O']
     backbone = pd.concat([residue[residue['atom_name'] == atom] for atom in backbone_atoms], ignore_index=True)
     backbone_center = center_of_gravity(get_points(backbone))
-    #vector starts from backbone
-    backbone_direction_vector = np.array(cavity_center - backbone_center)
+    # backbone_direction_vector = np.array(cavity_center - backbone_center)
 
     # Calculate the vector between the residue's side chain and the cavity's center of gravity
     side_chain_atoms = np.setdiff1d(np.unique(protein[['atom_name']].values), backbone_atoms)
     side_chain = pd.concat([residue[residue['atom_name'] == atom] for atom in side_chain_atoms], ignore_index=True)
     side_chain_center = center_of_gravity(get_points(side_chain))
-    side_chain_direction_vector = np.array(cavity_center - side_chain_center)
+    # side_chain_direction_vector = np.array(cavity_center - side_chain_center)
 
-
-    # visualization of vectors and points
-    #get protein and cavity point cloud
-    protein_points = get_points(protein).to_numpy()
-    protein_hull = ConvexHull(protein_points)
-    cavity_points = get_points(cavity).to_numpy()
+    backbone_side_chain_vector = np.array(side_chain_center - backbone_center)
+    residue_cavity_vector = np.array(cavity_center - backbone_center)
+    cosine_angle = np.dot(backbone_side_chain_vector, residue_cavity_vector) / (
+            np.linalg.norm(backbone_side_chain_vector) * np.linalg.norm(residue_cavity_vector))
+    print(f'cosine_angle: {cosine_angle}')
     cavity_hull = ConvexHull(cavity_points)
-    #get residue points
-    residue_points = residue[["x","y","z"]].to_numpy()
+    distance_to_closest_point, cavity_radius, angle_degrees = (distances_angles_shell_center(cavity_points,cavity_hull))
+
+    backbone_cavity_dist = np.linalg.norm(backbone_center - cavity_center)
+    print(f'backbone_cavity_dist: {backbone_cavity_dist}')
+
+    sphere_dist = math.sqrt(cavity_radius**2 + backbone_cavity_dist**2)
+    print(f'sphere_dist: {sphere_dist}')
+
+    threshold = (backbone_cavity_dist**2 + sphere_dist**2 - cavity_radius**2) / (
+            2 * backbone_cavity_dist * sphere_dist)
+    print(f'threshold: {threshold}')
+
+    # get residue points
+    residue_points = residue[["x", "y", "z"]].to_numpy()
     # make fig to plot  mesh
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     cavity_mesh = Poly3DCollection([cavity_points[s] for s in cavity_hull.simplices], alpha=0.25, edgecolor='k')
     ax.add_collection3d(cavity_mesh)
-    """protein_mesh = Poly3DCollection([protein_points[s] for s in protein_hull.simplices], alpha=0.25, edgecolor='k')
-    ax.add_collection3d(protein_mesh)"""
     ax.scatter(residue_points[:, 0], residue_points[:, 1], residue_points[:, 2], c='r', marker='o',
                label='residue points')
-    #ax.scatter(cavity_points[:, 0], cavity_points[:, 1], cavity_points[:, 2], c='b', marker='o', label='cavity')
-    ax.quiver(backbone_center[0], backbone_center[1], backbone_center[2], backbone_direction_vector[0], backbone_direction_vector[1], backbone_direction_vector[2], label='backbone_direction_vector')
-    ax.quiver(side_chain_center[0], side_chain_center[1], side_chain_center[2],side_chain_direction_vector[0], side_chain_direction_vector[1], side_chain_direction_vector[2])
+    ax.quiver(backbone_center[0], backbone_center[1], backbone_center[2], backbone_direction_vector[0],
+              backbone_direction_vector[1], backbone_direction_vector[2], label='backbone_direction_vector')
+    ax.quiver(side_chain_center[0], side_chain_center[1], side_chain_center[2], side_chain_direction_vector[0],
+              side_chain_direction_vector[1], side_chain_direction_vector[2])
     ax.set_xlim([18, 28])
     ax.set_ylim([5, 20])
-    ax.set_zlim([45,65])
+    ax.set_zlim([45, 65])
     plt.show()
 
-    # Calculate the cosine of the angle between vectors
-    backbone_cosine_angle = np.dot(backbone_direction_vector, cavity_center) / (
-            np.linalg.norm(backbone_direction_vector) * np.linalg.norm(cavity_center))
-    print(backbone_cosine_angle)
-    print(backbone_direction_vector)
-    side_chain_cosine_angle = np.dot(side_chain_direction_vector, cavity_center) / (
-            np.linalg.norm(side_chain_direction_vector) * np.linalg.norm(cavity_center))
-    print(side_chain_cosine_angle)
-
-    # Check if the cosine of the angles are greater than the threshold to determine exposure
-    if side_chain_cosine_angle > dot_product_threshold:
+    if threshold <= cosine_angle <= 1:
+        print("side chain")
         return True, 'side_chain'
-    elif backbone_cosine_angle > dot_product_threshold:
+    elif -1 <= cosine_angle <= -threshold:
+        print("backbone")
         return True, 'backbone'
     else:
         return False, None
+
 
 protein_file = "1a28\\protein.mol2"
 cavity_file = "1a28/volsite/CAVITY_N1_ALL.mol2"
