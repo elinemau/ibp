@@ -172,10 +172,10 @@ def plot_obb(points, principal_axes, centroid, elev_init=20, azim_init=30):
     azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
                              valinit=azim_init)
     azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
-    plt.savefig('smallest_box.svg', format='svg', transparent=True)
     ax.grid(False)
     ax.axis('off')
     ax.set_facecolor('none')
+    plt.savefig('smallest_box.svg', format='svg', transparent=True)
     plt.show()
 
 
