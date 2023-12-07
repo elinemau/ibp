@@ -138,7 +138,7 @@ def plot_obb(points, principal_axes, centroid):
            [box_vertices[i] for i in [2, 3, 7, 6]]]
 
     ax.add_collection3d(Poly3DCollection(box, facecolors='cornflowerblue', linewidths=1, edgecolors='k', alpha=.25))
-
+    plt.savefig('smallest_box.svg', format='svg', transparent=True)
     ax.grid(False)
     plt.show()
 

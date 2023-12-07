@@ -167,7 +167,6 @@ def find_neighboring_residues(protein_file, cavity_file, distance_threshold=4.0)
     #returns set of residues present around cavity
     return resid_indices
 
-
 def is_residue_exposed_to_cavity(protein, cavity, residue_id):
     """
     Determine whether a residue is exposed to a cavity in a protein structure based on the cosine of angles.
@@ -182,51 +181,54 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id):
     cavity_points = get_points(cavity)
     cavity_center = center_of_gravity(cavity_points)
 
-    print(residue_id)
     residue = protein[protein['subst_id'] == residue_id]
-    # residue_center = center_of_gravity(get_points(residue))
 
     # Calculate the vector between the residue's backbone (N, CA, C) and the cavity's center of gravity
     backbone_atoms = ['N', 'CA', 'C', 'O']
     backbone = pd.concat([residue[residue['atom_name'] == atom] for atom in backbone_atoms], ignore_index=True)
     backbone_center = center_of_gravity(get_points(backbone))
-    # backbone_direction_vector = np.array(cavity_center - backbone_center)
+
+    # Get coordinates of CA of the residue
+    CA = residue[residue['atom_name'] == 'CA'][["x", "y", "z"]].values
+    # Fail-safe if there is no CA atom (non-residue substructures)
+    if len(CA) == 0:
+        return False, None
+
+    CA_coords = pd.Series(CA[0], index=["x", "y", "z"])
 
     # Calculate the vector between the residue's side chain and the cavity's center of gravity
     side_chain_atoms = np.setdiff1d(np.unique(protein[['atom_name']].values), backbone_atoms)
     side_chain = pd.concat([residue[residue['atom_name'] == atom] for atom in side_chain_atoms], ignore_index=True)
     side_chain_center = center_of_gravity(get_points(side_chain))
-    # side_chain_direction_vector = np.array(cavity_center - side_chain_center)
 
-    backbone_side_chain_vector = np.array(side_chain_center - backbone_center)
-    residue_cavity_vector = np.array(cavity_center - backbone_center)
+    backbone_side_chain_vector = np.array(side_chain_center - CA_coords)
+    residue_cavity_vector = np.array(cavity_center - CA_coords)
     cosine_angle = np.dot(backbone_side_chain_vector, residue_cavity_vector) / (
             np.linalg.norm(backbone_side_chain_vector) * np.linalg.norm(residue_cavity_vector))
-    print(f'cosine_angle: {cosine_angle}')
-    cavity_hull = ConvexHull(cavity_points)
-    distance_to_closest_point, cavity_radius, angle_degrees = (distances_angles_shell_center(cavity_points,cavity_hull))
+
+    # Add min & max distance to the center of the gravity & shell & the angle between those
+    convex_hull = ConvexHull(cavity_points)
+    dist_to_closest_point, dist_to_furthest_point, angle_deg = (
+        distances_angles_shell_center(cavity_points, convex_hull))
 
     backbone_cavity_dist = np.linalg.norm(backbone_center - cavity_center)
-    print(f'backbone_cavity_dist: {backbone_cavity_dist}')
 
-    sphere_dist = math.sqrt(cavity_radius**2 + backbone_cavity_dist**2)
-    print(f'sphere_dist: {sphere_dist}')
+    sphere_dist = math.sqrt(dist_to_furthest_point**2 + backbone_cavity_dist**2)
 
-    threshold = (backbone_cavity_dist**2 + sphere_dist**2 - cavity_radius**2) / (
+    threshold = (backbone_cavity_dist**2 + sphere_dist**2 - dist_to_furthest_point**2) / (
             2 * backbone_cavity_dist * sphere_dist)
-    print(f'threshold: {threshold}')
 
     # get residue points
     residue_points = residue[["x", "y", "z"]].to_numpy()
     # make fig to plot  mesh
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    cavity_mesh = Poly3DCollection([cavity_points[s] for s in cavity_hull.simplices], alpha=0.25, edgecolor='k')
+    cavity_mesh = Poly3DCollection([cavity_points[s] for s in convex_hull.simplices], alpha=0.25, edgecolor='k')
     ax.add_collection3d(cavity_mesh)
     ax.scatter(residue_points[:, 0], residue_points[:, 1], residue_points[:, 2], c='r', marker='o',
                label='residue points')
-    ax.quiver(backbone_center[0], backbone_center[1], backbone_center[2], backbone_direction_vector[0],
-              backbone_direction_vector[1], backbone_direction_vector[2], label='backbone_direction_vector')
+    ax.quiver(CA_coords[0], CA_coords[1], CA_coords[2], backbone_side_chain_vector[0],
+              backbone_side_chain_vector[1], backbone_side_chain_vector[2], label='backbone_direction_vector')
     ax.quiver(side_chain_center[0], side_chain_center[1], side_chain_center[2], side_chain_direction_vector[0],
               side_chain_direction_vector[1], side_chain_direction_vector[2])
     ax.set_xlim([18, 28])
@@ -235,13 +237,12 @@ def is_residue_exposed_to_cavity(protein, cavity, residue_id):
     plt.show()
 
     if threshold <= cosine_angle <= 1:
-        print("side chain")
         return True, 'side_chain'
     elif -1 <= cosine_angle <= -threshold:
-        print("backbone")
         return True, 'backbone'
     else:
         return False, None
+
 
 
 protein_file = "1a28\\protein.mol2"
