@@ -228,7 +228,7 @@ def is_residue_exposed_to_cavity(prot, cav, residue_id, elev_init=20, azim_init=
     ax.grid(False)
     ax.axis('off')
     ax.set_facecolor('none')
-    ax.view_init(elev=2, azim=-150)
+    ax.view_init(elev=0, azim=40)
     plt.savefig('vector_method.svg', format='svg', transparent=True)
     plt.show(block=True)
 
@@ -248,7 +248,7 @@ residues = find_neighboring_residues(protein_file, cavity_file)
 protein_df = load_mol_file(protein_file)
 cavity_df = load_mol_file(cavity_file)
 for i in residues:
-    if i == "325":
+    if i == "363":
         print(is_residue_exposed_to_cavity(protein_df, cavity_df,i))
     else:
         continue
