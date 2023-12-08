@@ -72,11 +72,12 @@ def sphericity(points, elev_init=20, azim_init=30):
     sphere_points = np.column_stack([x.flatten(), y.flatten(), z.flatten()])
     sphere_hull = ConvexHull(sphere_points)
     # Plot the convex hull mesh for the sphere
-    sphere_mesh = Poly3DCollection([sphere_points[s] for s in sphere_hull.simplices], alpha=0.05, edgecolor='gray',
+    sphere_mesh = Poly3DCollection([sphere_points[s] for s in sphere_hull.simplices], alpha=0.2, edgecolor='grey',
                                    facecolors='white')
+
     ax.add_collection3d(sphere_mesh)
-    mesh = Poly3DCollection([points[s] for s in hull.simplices], alpha=0.2, edgecolor='lightsteelblue',
-                            facecolors="cornflowerblue")
+    mesh = Poly3DCollection([points[s] for s in hull.simplices], alpha=0.4, edgecolor='lightgray',
+                            facecolors="orange")
     ax.add_collection3d(mesh)
     ax.set_ylim(-6,6)
     ax.set_xlim(-6,6)
@@ -99,6 +100,7 @@ def sphericity(points, elev_init=20, azim_init=30):
     azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
                              valinit=azim_init)
     azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
+    ax.view_init(elev=1, azim=42)
     plt.savefig('sphere_shape.svg', format='svg', transparent=True)
     plt.show()
 
@@ -156,25 +158,11 @@ def plot_obb(points, principal_axes, centroid, elev_init=20, azim_init=30):
            [box_vertices[i] for i in [0, 1, 5, 4]],
            [box_vertices[i] for i in [2, 3, 7, 6]]]
 
-    ax.add_collection3d(Poly3DCollection(box, facecolors='cornflowerblue', linewidths=1, edgecolors='lightsteelblue', alpha=.25))
-    ax.view_init(elev=20, azim=30)
-
-    def update_view(elev, azim):
-        ax.view_init(elev=elev_init, azim=azim_init)
-        plt.draw()
-
-    # Create an interactive slider for elevation angle
-    elev_slider = plt.Slider(ax=plt.axes([0.1, 0.01, 0.65, 0.03]), label='Elevation', valmin=0, valmax=90,
-                             valinit=elev_init)
-    elev_slider.on_changed(lambda elev: update_view(elev, azim_slider.val))
-
-    # Create an interactive slider for azimuthal angle
-    azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
-                             valinit=azim_init)
-    azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
+    ax.add_collection3d(Poly3DCollection(box, facecolors='orange', linewidths=1, edgecolors='gray', alpha=.25))
     ax.grid(False)
     ax.axis('off')
     ax.set_facecolor('none')
+    ax.view_init(elev=35, azim=15)
     plt.savefig('smallest_box.svg', format='svg', transparent=True)
     plt.show()
 

@@ -6,21 +6,29 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import seaborn as sns
 
+#df prep
+df_sc = pd.read_csv('scPDB_descriptors.csv')
+df_sc.set_index("protein_code", inplace=True)
+df_sc = df_sc.dropna()
+df_sc = df_sc.drop(df_sc.columns[:1], axis=1)
+df_sc.index = df_sc.index + "_sc"
+df_iri = pd.read_csv('iridium_desc.csv')
+df_iri.set_index("protein_code", inplace=True)
+df_iri = df_iri.dropna()
+df_iri = df_iri.drop(df_iri.columns[:1], axis=1)
+df_iri.index = df_iri.index + "_iri"
 
-df = pd.read_csv('scPDB_descriptors.csv')
-df.set_index("protein_code", inplace=True)
-df = df.dropna()
-df = df.drop(df.columns[:1], axis=1)
+#combine df
+df = pd.concat([df_sc, df_iri], axis=0)
 threshold = 0.9
 # Calculate the proportion of zeros in each column
 zero_proportion = (df == 0).sum() / len(df)
 # Drop columns where the proportion of zeros exceeds the threshold
 columns_to_drop = zero_proportion[zero_proportion > threshold].index
 df = df.drop(columns=columns_to_drop)
-print(df.head())
-#standardize the data
-scaler=StandardScaler()
-scaled_data=scaler.fit_transform(df)
+#scale
+scaler = StandardScaler()
+scaled_data =scaler.fit_transform(df)
 
 #do pca
 pca = PCA(n_components=2)
@@ -58,18 +66,21 @@ ax.set_zlabel('Principal Component 3')
 ax.set_title('Scatter Plot of Data in 3D with First 3 PCs')
 plt.show()"""
 
-#clustering
-kmeans = KMeans(n_clusters=10)
-pc_df['Cluster'] = kmeans.fit_predict(principal_components)
-#cluster_centroids = kmeans.cluster_centers_
-# Plot the data in 3D with cluster centroids
-# Plot cluster centroids
-plt.scatter(pc_df['PC1'], pc_df['PC2'],
-           c=pc_df['Cluster'], cmap='viridis')
+# Plot the results with different colors for each dataset
+plt.figure(figsize=(10, 6))
+
+# Create boolean masks to select rows from each dataset
+mask_dataset1 = df.index.str.contains('sc')
+mask_dataset2 = df.index.str.contains('iri')
+
+# Plot Dataset 1 in blue
+plt.scatter(principal_components[mask_dataset1, 0], principal_components[mask_dataset1, 1], color='cornflowerblue', label='scPDB', s=10)
+
+# Plot Dataset 2 in red
+plt.scatter(principal_components[mask_dataset2, 0], principal_components[mask_dataset2, 1], color='orange', label='Iridium', s=10)
 
 plt.xlabel('Principal Component 1')
 plt.ylabel('Principal Component 2')
-plt.title('Scatter Plot of Data with Cluster Centroids in 3D')
-plt.colorbar(label='Cluster')
+plt.legend()
+plt.savefig('PCA.svg', format='svg', transparent=True)
 plt.show()
-

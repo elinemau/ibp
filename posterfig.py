@@ -217,9 +217,8 @@ def is_residue_exposed_to_cavity(prot, cav, residue_id, elev_init=20, azim_init=
               backbone_side_chain_vector[1], backbone_side_chain_vector[2])
     ax.quiver(CA_coords[0], CA_coords[1], CA_coords[2], residue_cavity_vector[0],
               residue_cavity_vector[1], residue_cavity_vector[2])
-    ax.scatter(residue_points[:, 0], residue_points[:, 1], residue_points[:, 2], c='lightsalmon', marker='o',
-               label='residue points')
-    cavity_mesh = Poly3DCollection([cav_points.iloc[s] for s in convex_hull.simplices], facecolors='cornflowerblue', linewidths=1, edgecolors='lightsteelblue', alpha=.2)
+    ax.scatter(residue_points[:, 0], residue_points[:, 1], residue_points[:, 2], c='orangered', marker='o')
+    cavity_mesh = Poly3DCollection([cav_points.iloc[s] for s in convex_hull.simplices], facecolors='orange', linewidths=0.5, edgecolors='gray', alpha=.25)
     ax.add_collection3d(cavity_mesh)
 
 
@@ -229,21 +228,7 @@ def is_residue_exposed_to_cavity(prot, cav, residue_id, elev_init=20, azim_init=
     ax.grid(False)
     ax.axis('off')
     ax.set_facecolor('none')
-    ax.view_init(elev=20, azim=30)
-
-    def update_view(elev, azim):
-        ax.view_init(elev=elev_init, azim=azim_init)
-        plt.draw()
-
-    # Create an interactive slider for elevation angle
-    elev_slider = plt.Slider(ax=plt.axes([0.1, 0.01, 0.65, 0.03]), label='Elevation', valmin=0, valmax=90,
-                             valinit=elev_init)
-    elev_slider.on_changed(lambda elev: update_view(elev, azim_slider.val))
-
-    # Create an interactive slider for azimuthal angle
-    azim_slider = plt.Slider(ax=plt.axes([0.1, 0.06, 0.65, 0.03]), label='Azimuth', valmin=0, valmax=360,
-                             valinit=azim_init)
-    azim_slider.on_changed(lambda azim: update_view(elev_slider.val, azim))
+    ax.view_init(elev=2, azim=-150)
     plt.savefig('vector_method.svg', format='svg', transparent=True)
     plt.show(block=True)
 
@@ -263,7 +248,7 @@ residues = find_neighboring_residues(protein_file, cavity_file)
 protein_df = load_mol_file(protein_file)
 cavity_df = load_mol_file(cavity_file)
 for i in residues:
-    if i == "287":
+    if i == "325":
         print(is_residue_exposed_to_cavity(protein_df, cavity_df,i))
     else:
         continue

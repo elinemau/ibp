@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 
 #making dataframe to make x y z coordinates accessible
 df = pd.DataFrame(columns=["number", "atom", "x", "y", "z"])
-with open("1a28\\volsite\\CAVITY_N1_ALL.mol2", "r") as file:
+with open("1a28\\1a28\\CAVITY_N1_ALL.mol2", "r") as file:
     line = file.readline()
     while not line.startswith("@<TRIPOS>ATOM"):
         line = file.readline()
@@ -37,9 +37,9 @@ print(boundary_points)
 #make fig to plot  mesh
 fig=plt.figure()
 ax=fig.add_subplot(111, projection='3d')
-ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2], c='r', marker='o', label='Boundary Points')
-ax.scatter(point_cloud[:,0], point_cloud[:,1], point_cloud[:,2], c='b', marker='o', label='grid')
-mesh = Poly3DCollection([point_cloud[s] for s in hull.simplices], alpha=0.25, edgecolor='k')
+"""ax.scatter(boundary_points[:, 0], boundary_points[:, 1], boundary_points[:, 2], c='r', marker='o', label='Boundary Points')
+ax.scatter(point_cloud[:,0], point_cloud[:,1], point_cloud[:,2], c='b', marker='o', label='grid')"""
+mesh = Poly3DCollection([point_cloud[s] for s in hull.simplices], alpha=0.25, facecolors='cornflowerblue', linewidths=1, edgecolors='lightsteelblue')
 ax.add_collection3d(mesh)
 
 #find furthest point in cloud from center
@@ -73,19 +73,12 @@ print(f"Angle between closest and furthest points: {angle_degrees:.2f} degrees")
 ax.plot([center[0], furthest_point[0]], [center[1], furthest_point[1]], [center[2], furthest_point[2]], 'g-', label='distance line')
 ax.plot([center[0], closest_point[0]], [center[1], closest_point[1]], [center[2], closest_point[2]], 'g-', label='distance line')
 
-#calculate surface area
-surface_area = hull.area
-print(f"Surface Area of Convex Hull: {surface_area}")
-
-#perform pca to find principal components of cloud and plot
-pca = PCA(n_components= 2)
-pca.fit(point_cloud)
-principal_components = pca.components_
-for pc in principal_components:
-    ax.quiver(center[0], center[1], center[2], pc[0], pc[1], pc[2], color='r', label='Principal Component',
-              arrow_length_ratio=0.5)
-
-ax.legend()
+ax.set_xlim(30,40)
+ax.set_ylim(30, 40)
+ax.set_zlim(35, 50)
+ax.grid(False)
+ax.axis('off')
+ax.set_facecolor('none')
 plt.show()
 
 
